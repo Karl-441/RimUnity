@@ -1,0 +1,10 @@
+{
+  "name": "com.chezhou.rimunity",
+  "version": "0.1.5",
+  "license": "MIT",
+  "displayName": "RimUnity Exporter",
+  "description": "Unity authoring and plaintext prefab export for RimWorld 1.7 Waylith.",
+  "unity": "2022.3",
+  "author": {"name": "chezhou9413"},
+  "dependencies": {"com.unity.ugui": "1.0.0", "com.unity.nuget.newtonsoft-json": "3.2.1", "com.unity.textmeshpro": "3.0.6"}
+}

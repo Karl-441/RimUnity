@@ -1,0 +1,1 @@
+{"name":"RimUnity.Editor","rootNamespace":"RimUnity.Editor","references":["RimUnity.Authoring","Unity.ugui","Unity.TextMeshPro","Unity.Newtonsoft.Json"],"includePlatforms":["Editor"],"autoReferenced":true}

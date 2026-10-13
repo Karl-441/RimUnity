@@ -1,0 +1,121 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using RimUnity.Serialization;
+using UnityEngine;
+using UnityEngine.Rendering;
+using UnityStubs.Gui;
+
+namespace RimUnity.Assets;
+
+//从明文描述恢复共享网格、贴图、精灵、字体和材质。
+internal static class ResourceLoader
+{
+    //资源描述与像素、字体文件分离，清单中不需要本机路径。
+    internal static UnityEngine.Object Load(AssetCatalog catalog, AssetRecord record)
+    {
+        if (record.type == "Shader") return Rendering.CustomShaderLoader.Load(catalog, record);
+        ResourceData data = catalog.Read<ResourceData>(record.file);
+        if (data.formatVersion != 1 || data.type != record.type) throw new InvalidDataException($"资源格式不匹配：{record.path}");
+        var reader = new ValueReader(catalog, new Dictionary<string, UnityEngine.Object>());
+        var fields = data.members.ToDictionary(m => m.name, m => m.value);
+        T Get<T>(string key) => (T)reader.Read(fields[key], typeof(T));
+        UnityEngine.Object result;
+        switch (data.type)
+        {
+            case "TextAsset":
+                //调用宿主实际的字节载入入口，避免把二进制文本资源做 UTF-8 往返转换。
+                var fromBytes = typeof(TextAsset).GetMethod("FromBytes", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
+                    null, new[] { typeof(string), typeof(byte[]) }, null)
+                    ?? throw new MissingMethodException(typeof(TextAsset).FullName, "FromBytes");
+                result = (TextAsset)fromBytes.Invoke(null, new object[] { data.name, File.ReadAllBytes(catalog.Resolve(Get<string>("file"))) });
+                break;
+            case "Light":
+                var lightObject = new GameObject(data.name + " 灯光模板");
+                lightObject.SetActive(false);
+                var light = lightObject.AddComponent<UnityEngine.Light>();
+                reader.Apply(light, data.members); result = light; break;
+            case "TMP_FontAsset":
+                var tmpFont = new UI.TMP_FontAsset(); reader.Apply(tmpFont, data.members); result = tmpFont; break;
+            case "AnimationClip":
+                var clip = new AnimationClip(); reader.Apply(clip, data.members); result = clip; break;
+            case "RuntimeAnimatorController":
+                var controller = new RuntimeAnimatorController(); reader.Apply(controller, data.members); result = controller; break;
+            case "Texture3D":
+                var volume = new Texture3D(Get<int>("width"), Get<int>("height"), Get<int>("depth"), TextureFormat.RGBAFloat, false, true);
+                volume.SetPixels(Get<Color[]>("pixels")); volume.Apply(false, false);
+                volume.wrapMode = Get<TextureWrapMode>("wrapMode"); volume.filterMode = Get<FilterMode>("filterMode");
+                result = volume; break;
+            case "Texture2D":
+                Texture2D texture = new(2, 2, TextureFormat.RGBA32, false, Get<bool>("linear"));
+                if (!texture.LoadImage(File.ReadAllBytes(catalog.Resolve(Get<string>("file"))))) throw new InvalidDataException($"无法读取图片：{record.path}");
+                //宿主图片解码会重置为 sRGB，解码后恢复导出时的数值纹理标记。
+                var pixels = texture.CoreTexture.CpuData;
+                if (pixels.Linear != Get<bool>("linear"))
+                    texture.CoreTexture.ReplaceCpuData(texture.width, texture.height, pixels.Format, pixels.Levels, pixels.MipCount, Get<bool>("linear"));
+                texture.wrapMode = Get<TextureWrapMode>("wrapMode");
+                texture.filterMode = Get<FilterMode>("filterMode");
+                result = texture;
+                break;
+            case "Sprite":
+                result = Sprite.Create(Get<Texture2D>("texture"), Get<Rect>("rect"), Get<Vector2>("pivot"),
+                    Get<float>("pixelsPerUnit"), 0, SpriteMeshType.FullRect, Get<Vector4>("border"));
+                if (fields.ContainsKey("geometryPositions")) UI.SpriteGeometry.Register((Sprite)result, Get<Vector2[]>("geometryPositions"), Get<Vector2[]>("geometryUV"), Get<int[]>("geometryTriangles"));
+                break;
+            case "Font":
+                if (fields.TryGetValue("builtin", out var builtin) && builtin.number != 0)
+                    result = new Font { GameFontIndex = 1 };
+                else
+                {
+                    int index = GuiBackend.Current.RegisterFont(data.name, File.ReadAllBytes(catalog.Resolve(Get<string>("file"))), 32, 0);
+                    if (index < 0) throw new InvalidDataException($"Waylith 无法注册字体：{data.name}");
+                    result = new Font { GameFontIndex = index };
+                }
+                break;
+            case "Mesh":
+                Mesh mesh = new() { indexFormat = IndexFormat.UInt32 };
+                reader.Apply(mesh, data.members.Where(m => m.name != "submeshes" && !m.name.StartsWith("skin", StringComparison.Ordinal)));
+                if (fields.ContainsKey("skinCounts")) Rendering.SkinWeights.Register(mesh, Get<int[]>("skinCounts"), Get<int[]>("skinIndices"), Get<float[]>("skinWeights"));
+                int[][] triangles = Get<int[][]>("submeshes");
+                mesh.subMeshCount = triangles.Length;
+                for (int i = 0; i < triangles.Length; i++) mesh.SetTriangles(triangles[i], i);
+                mesh.RecalculateBounds();
+                result = mesh;
+                break;
+            case "Material":
+                Shader unityShader;
+                if (fields["shader"].kind == "asset") unityShader = Get<Shader>("shader");
+                else
+                {
+                    string shaderName = Get<string>("shader");
+                    if (!Waylith.Rendering.ShaderRegistry.TryResolve(shaderName, out var shader))
+                        throw new InvalidDataException($"Shader 未注册：{shaderName}；请检查随包导出的 ShaderDef。");
+                    unityShader = Rendering.StandardParticleShader.Resolve(shader, data.colorSpace == "Linear");
+                }
+                Material material = new(unityShader);
+                foreach (var entry in fields.Where(p => p.Key != "shader" && p.Key != "shaderPasses"))
+                {
+                    if (entry.Value.kind == "asset" || entry.Value.kind == "null") material.SetTexture(entry.Key,
+                        entry.Key == "_MainTex" && entry.Value.kind == "null" ? Texture2D.whiteTexture : (Texture)reader.Read(entry.Value, typeof(Texture)));
+                    else if (entry.Value.kind == "vector") SetMaterialVector(material, entry.Key, (Vector4)reader.Read(entry.Value, typeof(Vector4)));
+                    else if (entry.Value.kind == "integer") material.SetInt(entry.Key, (int)reader.Read(entry.Value, typeof(int)));
+                    else material.SetFloat(entry.Key, (float)reader.Read(entry.Value, typeof(float)));
+                }
+                if (fields.ContainsKey("shaderPasses")) Rendering.MaterialPasses.Register(material, Get<Shader[]>("shaderPasses"));
+                result = material;
+                break;
+            default: throw new NotSupportedException($"资源类型尚未实现：{data.type} ({record.path})");
+        }
+        result.name = data.name;
+        return result;
+    }
+
+    //宿主会省略首次设置的恒等纹理变换；Surface 虚拟 UV 没有采样器，不能依赖纹理初始化补值。
+    internal static void SetMaterialVector(Material material, string name, Vector4 value)
+    {
+        material.SetVector(name, value);
+        if (name.EndsWith("_ST", StringComparison.Ordinal))
+            material.engineMaterial.SetVector(Shader.PropertyToID(name), new System.Numerics.Vector4(value.z, value.w, value.x, value.y));
+    }
+}

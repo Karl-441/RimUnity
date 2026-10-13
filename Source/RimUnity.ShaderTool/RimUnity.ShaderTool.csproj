@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><AllowUnsafeBlocks>true</AllowUnsafeBlocks><OutputPath>../../Tools/bin/ShaderTool/</OutputPath></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/ShaderColorSpace.cs" Link="ShaderColorSpace.cs" />
+    <Reference Include="Waylith" HintPath="$(RimWorldDir)/Waylith.dll" />
+    <Reference Include="Brutal.Slang" HintPath="$(RimWorldDir)/Brutal.Slang.dll" />
+    <Reference Include="Brutal.Core.Common" HintPath="$(RimWorldDir)/Brutal.Core.Common.dll" />
+    <Reference Include="Brutal.Core.Strings" HintPath="$(RimWorldDir)/Brutal.Core.Strings.dll" />
+    <Reference Include="Brutal.Interop" HintPath="$(RimWorldDir)/Brutal.Interop.dll" />
+  </ItemGroup>
+</Project>

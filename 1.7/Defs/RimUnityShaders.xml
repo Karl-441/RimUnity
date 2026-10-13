@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ShaderDef Name="RimUnity_UnlitBase" Abstract="True">
+    <shaderProgram>
+      <vertexShaderFileName>RimUnity/Unlit.vert.glsl</vertexShaderFileName>
+      <fragmentShaderFileName>RimUnity/Unlit.frag.glsl</fragmentShaderFileName>
+      <flipTextureST>false</flipTextureST>
+      <depthTest>true</depthTest><depthWrite>true</depthWrite><cullMode>Back</cullMode><renderQueue>2000</renderQueue>
+    </shaderProgram>
+  </ShaderDef>
+  <ShaderDef ParentName="RimUnity_UnlitBase"><defName>RimUnity_Unlit</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_UnlitBase">
+    <defName>RimUnity_Transparent</defName>
+    <shaderProgram><transparent>true</transparent><depthWrite>false</depthWrite><renderQueue>3000</renderQueue>
+      <blendMode>Custom</blendMode><blendSrcFactor>SrcAlpha</blendSrcFactor><blendDstFactor>OneMinusSrcAlpha</blendDstFactor>
+    </shaderProgram>
+  </ShaderDef>
+  <ShaderDef ParentName="RimUnity_UnlitBase"><defName>RimUnity_SkinnedUnlit</defName><shaderProgram><vertexShaderFileName>RimUnity/Skinned.vert.glsl</vertexShaderFileName><fragmentShaderFileName>RimUnity/Skinned.frag.glsl</fragmentShaderFileName></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_UnlitBase">
+    <defName>RimUnity_SkinnedTransparent</defName><shaderProgram><vertexShaderFileName>RimUnity/Skinned.vert.glsl</vertexShaderFileName><fragmentShaderFileName>RimUnity/Skinned.frag.glsl</fragmentShaderFileName>
+      <transparent>true</transparent><depthWrite>false</depthWrite><renderQueue>3000</renderQueue><blendMode>Custom</blendMode><blendSrcFactor>SrcAlpha</blendSrcFactor><blendDstFactor>OneMinusSrcAlpha</blendDstFactor>
+    </shaderProgram>
+  </ShaderDef>
+  <ShaderDef Name="RimUnity_ParticleBase" Abstract="True" ParentName="RimUnity_UnlitBase">
+    <shaderProgram><vertexShaderFileName>RimUnity/Particle.vert.glsl</vertexShaderFileName><fragmentShaderFileName>RimUnity/Particle.frag.glsl</fragmentShaderFileName>
+      <transparent>true</transparent><depthWrite>false</depthWrite><cullMode>None</cullMode><renderQueue>3000</renderQueue><blendMode>Custom</blendMode><blendSrcFactor>SrcAlpha</blendSrcFactor><blendDstFactor>OneMinusSrcAlpha</blendDstFactor>
+    </shaderProgram>
+  </ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_ParticleAlpha</defName></ShaderDef>
+  <ShaderDef Name="RimUnity_ParticleCutoutBase" Abstract="True" ParentName="RimUnity_ParticleBase"><shaderProgram><fragmentShaderFileName>RimUnity/ParticleCutout.frag.glsl</fragmentShaderFileName><transparent>false</transparent><depthWrite>true</depthWrite><renderQueue>2450</renderQueue><blendMode>Opaque</blendMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleCutoutBase"><defName>RimUnity_ParticleCutout</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleCutoutBase"><defName>RimUnity_ParticleCutoutBack</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_ParticlePremultiply</defName><shaderProgram><blendSrcFactor>One</blendSrcFactor></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_ParticlePremultiplyBack</defName><shaderProgram><blendSrcFactor>One</blendSrcFactor><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef Name="RimUnity_ParticleOpaqueBase" Abstract="True" ParentName="RimUnity_ParticleBase"><shaderProgram><fragmentShaderFileName>RimUnity/ParticleOpaque.frag.glsl</fragmentShaderFileName><transparent>false</transparent><depthWrite>true</depthWrite><renderQueue>2000</renderQueue><blendMode>Opaque</blendMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleOpaqueBase"><defName>RimUnity_ParticleOpaque</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleOpaqueBase"><defName>RimUnity_ParticleOpaqueBack</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_ParticleAdditive</defName><shaderProgram><blendDstFactor>One</blendDstFactor></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_ParticleAlphaBack</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_ParticleAdditiveBack</defName><shaderProgram><blendDstFactor>One</blendDstFactor><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase">
+    <defName>RimUnity_UI</defName><shaderProgram><vertexShaderFileName>RimUnity/UI.vert.glsl</vertexShaderFileName><depthTest>false</depthTest></shaderProgram>
+  </ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase">
+    <defName>RimUnity_SDF</defName><shaderProgram><vertexShaderFileName>RimUnity/UI.vert.glsl</vertexShaderFileName><fragmentShaderFileName>RimUnity/SDF.frag.glsl</fragmentShaderFileName><depthTest>false</depthTest></shaderProgram>
+  </ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_UIAdditive</defName><shaderProgram><vertexShaderFileName>RimUnity/UI.vert.glsl</vertexShaderFileName><depthTest>false</depthTest><blendDstFactor>One</blendDstFactor></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_WorldSDF</defName><shaderProgram><fragmentShaderFileName>RimUnity/SDF.frag.glsl</fragmentShaderFileName></shaderProgram></ShaderDef>
+</Defs>

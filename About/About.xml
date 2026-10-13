@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+  <name>RimUnity</name>
+  <author>chezhou9413</author>
+  <packageId>Chezhou.RimUnity</packageId>
+  <supportedVersions><li>1.7</li></supportedVersions>
+  <modDependencies><li><packageId>brrainz.harmony</packageId><displayName>Harmony</displayName><steamWorkshopUrl>steam://url/CommunityFilePage/2009463077</steamWorkshopUrl></li></modDependencies>
+  <loadAfter><li>brrainz.harmony</li></loadAfter>
+  <description>Unity 明文资源导出与 Waylith 兼容运行时。开发预览版；已实现能力与验证状态见 Docs/Status.md。</description>
+</ModMetaData>

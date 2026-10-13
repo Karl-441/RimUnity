@@ -1,0 +1,57 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using RimUnity.Serialization;
+using TMPro;
+using UnityEngine;
+
+namespace RimUnity.Editor
+{
+    //导出实际字体资源和 SDF 参数，不依赖运行时安装 TMP DLL。
+    internal static class TmpWriter
+    {
+        internal static void Component(TextMeshProUGUI text, ComponentData data, ValueWriter writer, string path)
+        {
+            if (text.font == null) throw new InvalidOperationException(path + "：TMP 字体未指定。");
+            if (text.fontStyle != FontStyles.Normal || text.enableVertexGradient || text.isRightToLeftText) throw new NotSupportedException(path + "：TMP 字体样式／顶点渐变／RTL 尚未接通。");
+            if (text.overflowMode != TextOverflowModes.Overflow && text.overflowMode != TextOverflowModes.Masking) throw new NotSupportedException(path + "：TMP 省略号／分页等溢出模式尚未接通。");
+            foreach (string name in new[] { "text", "font", "fontSize", "fontSizeMin", "fontSizeMax", "enableAutoSizing", "enableWordWrapping", "richText", "enableKerning", "overflowMode", "alignment", "characterSpacing", "lineSpacing", "margin", "color", "raycastTarget", "faceColor", "outlineColor", "outlineWidth" }) data.members.Add(writer.Property(text, name, path));
+            Material material = text.fontSharedMaterial;
+            if (material == null || !material.HasProperty("_GradientScale")) throw new NotSupportedException(path + "：仅支持 TMP SDF 字体材质。");
+            foreach (string keyword in new[] { "UNDERLAY_ON", "UNDERLAY_INNER", "GLOW_ON", "BEVEL_ON" }) if (material.IsKeywordEnabled(keyword)) throw new NotSupportedException(path + "：TMP 材质特性尚未接通：" + keyword);
+            data.members.Add(new MemberData { name = "faceDilate", property = true, value = writer.Write(material.GetFloat("_FaceDilate"), path) });
+        }
+        internal static void Font(TMP_FontAsset font, ResourceData data, ValueWriter writer, string path)
+        {
+            if (!font.atlasRenderMode.ToString().Contains("SD")) throw new NotSupportedException(path + "：字体图集必须使用 SDF 渲染模式。");
+            data.type = "TMP_FontAsset";
+            void Put(string name, object value) => data.members.Add(new MemberData { name = name, value = writer.Write(value, path + "." + name) });
+            Put("sourceFontFile", font.sourceFontFile); Put("atlasTextures", font.atlasTextures); Put("fallbackFontAssetTable", font.fallbackFontAssetTable.ToArray());
+            Put("pointSize", font.faceInfo.pointSize); Put("scale", font.faceInfo.scale); Put("ascentLine", font.faceInfo.ascentLine);
+            Put("descentLine", font.faceInfo.descentLine); Put("lineHeight", font.faceInfo.lineHeight); Put("atlasPadding", (float)font.atlasPadding);
+            var glyphs = new ValueData { kind = "array", items = new List<ValueData>() };
+            foreach (var character in font.characterTable)
+            {
+                var glyph = character.glyph; var fields = new List<MemberData>();
+                void Field(string name, object value) => fields.Add(new MemberData { name = name, value = writer.Write(value, path + ".glyph." + name) });
+                Field("unicode", character.unicode); Field("index", glyph.index); Field("atlasIndex", glyph.atlasIndex); Field("scale", glyph.scale * character.scale);
+                Field("width", glyph.metrics.width); Field("height", glyph.metrics.height); Field("bearingX", glyph.metrics.horizontalBearingX); Field("bearingY", glyph.metrics.horizontalBearingY); Field("advance", glyph.metrics.horizontalAdvance);
+                Field("rect", new Rect(glyph.glyphRect.x, glyph.glyphRect.y, glyph.glyphRect.width, glyph.glyphRect.height)); glyphs.items.Add(new ValueData { kind = "data", fields = fields });
+            }
+            data.members.Add(new MemberData { name = "glyphs", value = glyphs });
+            var pairs = new ValueData { kind = "array", items = new List<ValueData>() };
+            foreach (var pair in font.fontFeatureTable.glyphPairAdjustmentRecords)
+            {
+                var a = pair.firstAdjustmentRecord; var b = pair.secondAdjustmentRecord;
+                var av = a.glyphValueRecord; var bv = b.glyphValueRecord;
+                var fields = new List<MemberData>();
+                void Field(string name, object value) => fields.Add(new MemberData { name = name, value = writer.Write(value, path + ".glyphPair." + name) });
+                Field("first", a.glyphIndex); Field("second", b.glyphIndex);
+                Field("firstAdjustment", new Vector4(av.xPlacement, av.yPlacement, av.xAdvance, av.yAdvance));
+                Field("secondAdjustment", new Vector4(bv.xPlacement, bv.yPlacement, bv.xAdvance, bv.yAdvance));
+                pairs.items.Add(new ValueData { kind = "data", fields = fields });
+            }
+            data.members.Add(new MemberData { name = "glyphPairs", value = pairs });
+        }
+    }
+}

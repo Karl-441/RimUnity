@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ShaderDef Name="RimUnity_StandardParticleBase" Abstract="True" ParentName="RimUnity_ParticleBase"><shaderProgram><vertexShaderFileName>RimUnity/StandardParticle.vert.glsl</vertexShaderFileName><fragmentShaderFileName>RimUnity/StandardParticle.frag.glsl</fragmentShaderFileName></shaderProgram></ShaderDef>
+  <ShaderDef Name="RimUnity_SP0" Abstract="True" ParentName="RimUnity_StandardParticleBase"><shaderProgram><transparent>false</transparent><depthWrite>true</depthWrite><renderQueue>2000</renderQueue><blendMode>Opaque</blendMode></shaderProgram></ShaderDef>
+  <ShaderDef Name="RimUnity_SP1" Abstract="True" ParentName="RimUnity_SP0"><shaderProgram><renderQueue>2450</renderQueue></shaderProgram></ShaderDef>
+  <ShaderDef Name="RimUnity_SP3" Abstract="True" ParentName="RimUnity_StandardParticleBase"><shaderProgram><blendSrcFactor>One</blendSrcFactor></shaderProgram></ShaderDef>
+  <ShaderDef Name="RimUnity_SP4" Abstract="True" ParentName="RimUnity_StandardParticleBase"><shaderProgram><blendDstFactor>One</blendDstFactor></shaderProgram></ShaderDef>
+  <!-- 减法混合由运行时设置，ShaderDef 本身只支持 Add。 -->
+  <ShaderDef Name="RimUnity_SP5" Abstract="True" ParentName="RimUnity_SP4" />
+  <ShaderDef Name="RimUnity_SP6" Abstract="True" ParentName="RimUnity_StandardParticleBase"><shaderProgram><blendSrcFactor>DstColor</blendSrcFactor><blendDstFactor>Zero</blendDstFactor></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP0"><defName>RimUnity_StandardParticle0</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP0"><defName>RimUnity_StandardParticle0Back</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP1"><defName>RimUnity_StandardParticle1</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP1"><defName>RimUnity_StandardParticle1Back</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_StandardParticleBase"><defName>RimUnity_StandardParticle2</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_StandardParticleBase"><defName>RimUnity_StandardParticle2Back</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP3"><defName>RimUnity_StandardParticle3</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP3"><defName>RimUnity_StandardParticle3Back</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP4"><defName>RimUnity_StandardParticle4</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP4"><defName>RimUnity_StandardParticle4Back</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP5"><defName>RimUnity_StandardParticle5</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP5"><defName>RimUnity_StandardParticle5Back</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP6"><defName>RimUnity_StandardParticle6</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_SP6"><defName>RimUnity_StandardParticle6Back</defName><shaderProgram><cullMode>Back</cullMode></shaderProgram></ShaderDef>
+</Defs>

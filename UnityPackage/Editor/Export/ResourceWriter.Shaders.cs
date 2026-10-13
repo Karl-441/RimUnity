@@ -1,0 +1,35 @@
+using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
+using Newtonsoft.Json;
+using RimUnity.Serialization;
+using UnityEngine;
+
+namespace RimUnity.Editor
+{
+    //GLSL 和管线描述作为普通依赖写入当前事务，不依赖模组全局 Shaders 目录。
+    internal sealed partial class ResourceWriter
+    {
+        internal string AddShader(Material material, bool ui, string path, int pass = -1, bool includeDefaults = false)
+        {
+            var exported = CustomShaderWriter.Write(material, directory, ui, path, pass);
+            ShaderData shader = ShaderStateWriter.Write(material, exported.Manifest, ui, path);
+            if (includeDefaults) shader.defaults = ShaderDefaultsWriter.Read(material);
+            foreach (string approximation in shader.approximations) Debug.LogWarning("[RimUnity] " + path + "：" + approximation);
+            string hash;
+            using (var sha = SHA256.Create()) hash = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(shader)))).Replace("-", "").ToLowerInvariant();
+            string id = exported.Id + "_" + hash;
+            if (dependencies.Count > 0) dependencies.Peek().Add(id);
+            if (records.ContainsKey(id)) return id;
+            shader.key = id;
+            shader.vertexFile = relative + "/" + exported.Id + "/" + (string)exported.Manifest["vertexFile"];
+            shader.fragmentFile = relative + "/" + exported.Id + "/" + (string)exported.Manifest["fragmentFile"];
+            shader.descriptorFile = relative + "/" + exported.Id + "/shader.json";
+            string file = id + ".json";
+            ExportJson.Write(Path.Combine(directory, file), shader);
+            records.Add(id, new AssetRecord { id = id, name = material.shader.name, description = ui ? "UI GLSL" : "世界 GLSL", path = "__assets/" + id, file = relative + "/" + file, type = "Shader" });
+            return id;
+        }
+    }
+}
