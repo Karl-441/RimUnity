@@ -2,6 +2,8 @@
 
 本文面向内容模组作者。制作端使用 Unity 原生组件；游戏端由 RimUnity 执行已适配的部分。资源准备和编译见 [工作流](Workflow.md)，完整路径规则见 [资源加载](ResourceLoading.md)。
 
+脚本生命周期、层级查找、组件操作和协程示例见 [MonoBehaviour 与常用方法](MonoBehaviour.md)。
+
 ## 1. 声明依赖并引用程序集
 
 在内容模组 `About/About.xml` 的现有节点中加入：

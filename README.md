@@ -18,7 +18,7 @@ var instance = UnityEngine.Object.Instantiate(template);
 instance.transform.position = position;
 ```
 
-接入文档：[API 快速接入](Docs/ApiQuickStart.md)、[资源载入](Docs/ResourceLoading.md)、[制作到发布工作流](Docs/Workflow.md)。
+接入文档：[API 快速接入](Docs/ApiQuickStart.md)、[MonoBehaviour 与常用方法](Docs/MonoBehaviour.md)、[资源载入](Docs/ResourceLoading.md)、[制作到发布工作流](Docs/Workflow.md)。
 
 专题说明：[粒子](Docs/ParticleQuickStart.md)、[Shader 转换](Docs/CustomShaderConversion.md)、[颜色与 Bloom](Docs/ColorAndBloom.md)。
 
