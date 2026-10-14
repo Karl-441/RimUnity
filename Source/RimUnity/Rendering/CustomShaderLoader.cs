@@ -44,7 +44,10 @@ internal static class CustomShaderLoader
         var shader = new Waylith.Rendering.Shader(data.key, data.key, program, data.keywords, layout, pipeline, vertexInputLayout: inputs, precompiledStages: stages);
         if (shader.HasErrors) throw new InvalidDataException("Shader 注册前校验失败：" + data.sourceName);
         ShaderRegistry.Register(shader);
-        foreach (string approximation in data.approximations) Verse.Log.Warning("[RimUnity] " + data.sourceName + "：" + approximation);
+        if (data.profile == "world") LinearShaderVariants.Register(shader, fragment);
+        foreach (string approximation in data.approximations)
+            if (!LinearShaderVariants.TryGet(shader, out _) || !approximation.StartsWith("程序按 Linear 计算后编码到宿主 UNorm 场景", StringComparison.Ordinal))
+                Verse.Log.Warning("[RimUnity] " + data.sourceName + "：" + approximation);
         return RimUnity.Shader.FromEngineShader(data.key, shader);
     }
 }

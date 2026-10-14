@@ -76,7 +76,8 @@ public sealed class BloomSettings : ModSettings
 internal sealed record BloomFrame(bool Enabled, float Threshold, float Intensity, float SoftKnee, float Scatter) : System.IDisposable
 {
     internal int LayerMask { get; init; }
-    internal Waylith.Rendering.MeshDrawFrame Draws { get; init; }
+    internal int FrameNumber { get; init; }
+    internal HdrDrawFrame Draws { get; init; }
     //快照独占筛选后的绘制项，释放时不触碰地图本身的绘制缓存。
     public void Dispose() => Draws?.Dispose();
 }

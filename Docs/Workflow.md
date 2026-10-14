@@ -80,6 +80,8 @@ PrefabExporter.Export(modDirectory,
 
 这条命令会启动 Unity；不要针对已被另一个编辑器打开的同一工程执行。先创建报告目录。批次可能捕获单项错误后正常退出，因此不能只凭进程退出码判断全部成功，必须检查报告中的 `exported`、`degraded`、`error` 和 `warnings`。
 
+导出贴图时保留图形设备，不要添加 `-nographics`。非可读或压缩贴图需要 GPU 拷贝和读回；Windows 自动化可添加 `-force-d3d11`。当前设备为 Null 时，导出器会拒绝这类贴图并保留上一份成功产物。
+
 带 AB 标签的资源可由 `BundleAssetExporter.Export(modDirectory, reportFile, bundleNames)` 导出为 `Bundles/...` 入口。游戏加载导出的明文资源，不读取二进制 AB。
 
 ## 5. 游戏侧接入

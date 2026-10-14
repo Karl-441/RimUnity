@@ -28,6 +28,8 @@ public static partial class NativeRuntime
         updating = true;
         try
         {
+            //本帧已有的活动脚本先完成 Start，再进入固定更新和普通更新。
+            foreach (MonoBehaviour mono in FrameScripts) Ready(mono);
             float step = Time.fixedDeltaTime;
             if (!float.IsFinite(step) || step <= 0) throw new InvalidOperationException("fixedDeltaTime 必须为有限正数。");
             fixedRemainder += Time.deltaTime;

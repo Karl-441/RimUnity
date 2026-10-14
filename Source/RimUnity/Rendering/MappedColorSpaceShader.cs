@@ -23,6 +23,7 @@ internal static class MappedColorSpaceShader
             vertexInputLayout: source.VertexInputLayout, precompiledStages: stages);
         if (shader.HasErrors) throw new InvalidOperationException("Linear 材质注册失败：" + key);
         ShaderRegistry.Register(shader);
+        LinearShaderVariants.Register(shader, fragment);
         return RimUnity.Shader.FromEngineShader(key, shader);
     }
 }
