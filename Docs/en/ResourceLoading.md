@@ -14,7 +14,8 @@ MyContentMod/
    ├─ Assemblies/MyContentMod.dll
    └─ Data/RimUnity/
       ├─ catalog.json
-      └─ exports/<generation>/...
+      ├─ exports/<generation>/...
+      └─ blobs/<content-hash>.<extension>
 ```
 
 `LoadFolders.xml` can use `<v1.7><li>1.7</li></v1.7>` to load this version's assemblies and Defs. RimUnity's ModContentPack entry point reads `mod.RootDir/1.7/Data/RimUnity`; it does not automatically resolve alternative resource directories.
@@ -59,7 +60,8 @@ The resulting logical path is `Bundles/myeffects/Assets/Effects/Portal.prefab`. 
 
 ## Caching, sharing and disposal
 
-- Catalogs and resources are cached by directory for the lifetime of the process. Repeated loads reuse dependencies.
+- Catalogs and resources are cached by directory and asset ID for the lifetime of the process. Several prefabs referencing the same material, texture or mesh load it only once. Logical paths and bundle names use lookup indexes; JSON is decoded directly from file streams.
+- `blobs/` shares identical files on disk. Different asset IDs remain distinct objects, including textures with identical pixels but different color-space or sampling settings. Resource caches stay separate across mods; matching names or images do not merge objects.
 - Prefab templates remain inactive. Instances retain the exported hierarchy, fields, references and active states.
 - Do not modify or destroy shared materials, textures or templates returned by the loader. Prefer a renderer's MaterialPropertyBlock for per-instance parameters, or create and dispose of your own Material copy.
 - Destroy a GameObject when it is no longer needed. Do not assume every one-shot particle effect automatically destroys its root.
@@ -67,7 +69,17 @@ The resulting logical path is `Bundles/myeffects/Assets/Effects/Portal.prefab`. 
 
 ## Distributing content assets
 
-Include `catalog.json` and all files referenced by its dependencies. Copying the entire successfully exported Data/RimUnity directory is the simplest approach. If removing historical generations, follow every file reference in the catalog and dependencies. Keeping only the newest generation can break entries that were not re-exported.
+Include `catalog.json` and all referenced files, including `blobs/`. The build manager compacts its output automatically. For direct `PrefabExporter.Export` calls or per-item particle exports, create a compact copy from your own Editor script without converting the Unity assets again:
+
+```csharp
+RimUnity.Editor.ExportStorage.CopyForPublish(
+    "C:/Mods/MyContentMod/1.7/Data/RimUnity",
+    "C:/Builds/MyContentMod/1.7/Data/RimUnity");
+```
+
+Both arguments are asset directories, not mod roots. The destination must be absent or empty. Neither directory may equal or contain the other. The source is unchanged. Missing dependencies or invalid paths produce errors; do not distribute a failed destination. Distribute the complete successful output as your content mod's `1.7/Data/RimUnity` directory.
+
+Compaction keeps public entries and their dependencies, writes compact JSON and shares identical texture, font, GLSL and other payload files by SHA-256. Asset IDs, logical paths and explicit parameters are preserved. Keeping only the newest generation can break entries that were not re-exported.
 
 `FAILED.txt`, batch reports, `.export.lock` and temporary files are not runtime resources. Let the exporter maintain stable IDs, relative paths and dependencies instead of editing them by hand.
 

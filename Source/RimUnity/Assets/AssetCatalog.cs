@@ -14,6 +14,7 @@ internal sealed class AssetCatalog
     internal readonly string Root;
     internal readonly Manifest Manifest;
     private readonly Dictionary<string, AssetRecord> records;
+    private readonly Dictionary<string, AssetRecord> paths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, RimUnity.Object> resources = new();
     private readonly HashSet<string> loading = new();
 
@@ -24,11 +25,10 @@ internal sealed class AssetCatalog
         Manifest = Read<Manifest>("catalog.json");
         if (Manifest.formatVersion != 1) throw new NotSupportedException($"RimUnity 格式 {Manifest.formatVersion} 不受支持：{root}");
         records = Manifest.assets.ToDictionary(a => a.id, StringComparer.Ordinal);
-        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (AssetRecord record in Manifest.assets)
         {
             Resolve(record.file);
-            if (!paths.Add(record.path)) throw new InvalidDataException($"清单逻辑路径重复：{record.path}");
+            if (!paths.TryAdd(record.path, record)) throw new InvalidDataException($"清单逻辑路径重复：{record.path}");
             foreach (string dependency in record.dependencies)
                 if (!records.ContainsKey(dependency)) throw new InvalidDataException($"{record.path} 缺少依赖 {dependency}");
         }
@@ -45,12 +45,15 @@ internal sealed class AssetCatalog
     }
 
     //所有载荷均由共享格式定义解码。
-    internal T Read<T>(string file) => JsonSerializer.Deserialize<T>(File.ReadAllText(Resolve(file)), Json)
-        ?? throw new InvalidDataException($"空资源：{file}");
+    internal T Read<T>(string file)
+    {
+        using var stream = File.OpenRead(Resolve(file));
+        return JsonSerializer.Deserialize<T>(stream, Json) ?? throw new InvalidDataException($"空资源：{file}");
+    }
 
     //逻辑路径不暴露源 Unity 工程的文件结构。
-    internal AssetRecord Find(string path) => Manifest.assets.SingleOrDefault(a => string.Equals(a.path, path, StringComparison.OrdinalIgnoreCase))
-        ?? throw new FileNotFoundException($"模组 {Manifest.owner} 没有 RimUnity 资源：{path}");
+    internal AssetRecord Find(string path) => paths.TryGetValue(path, out var record) ? record
+        : throw new FileNotFoundException($"模组 {Manifest.owner} 没有 RimUnity 资源：{path}");
 
     //同一依赖只解码一次，并明确拒绝资源循环引用。
     internal RimUnity.Object Get(string id)

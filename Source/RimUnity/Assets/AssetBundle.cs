@@ -10,7 +10,8 @@ namespace RimUnity.Assets;
 public sealed class AssetBundle
 {
     private readonly AssetCatalog catalog;
-    private readonly AssetRecord[] entries;
+    private readonly Dictionary<string, AssetRecord> paths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<AssetRecord>> names = new(StringComparer.OrdinalIgnoreCase);
     public string name { get; }
 
     //包视图共享进程级资源模板，地图实例仍由调用者创建和释放。
@@ -18,7 +19,17 @@ public sealed class AssetBundle
     {
         this.catalog = catalog;
         this.name = name;
-        this.entries = entries;
+        string prefix = "Bundles/" + name + "/";
+        foreach (AssetRecord entry in entries)
+        {
+            paths.Add(entry.path.Substring(prefix.Length), entry);
+            //同一资源的多个别名相同时只登记一次，不同资源的重名保留用于报错。
+            foreach (string alias in new[] { entry.name, Path.GetFileNameWithoutExtension(entry.path), Path.GetFileName(entry.path) }.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!names.TryGetValue(alias, out var matches)) names.Add(alias, matches = new List<AssetRecord>());
+                matches.Add(entry);
+            }
+        }
     }
 
     //一个内容模组的清单可以同时包含多个原始 AB 包。
@@ -34,16 +45,16 @@ public sealed class AssetBundle
     public T LoadAsset<T>(string assetName) where T : RimUnity.Object
     {
         string path = assetName.Replace('\\', '/');
-        string prefix = "Bundles/" + name + "/";
-        var candidates = entries.Where(a => MatchesType<T>(a.type)).ToArray();
-        var exact = candidates.Where(a => string.Equals(a.path.Substring(prefix.Length), path, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (exact.Length == 0)
-            exact = candidates.Where(a => string.Equals(a.name, path, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(Path.GetFileNameWithoutExtension(a.path), path, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(Path.GetFileName(a.path), path, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (exact.Length == 0) return null;
-        if (exact.Length > 1) throw new InvalidDataException($"RimUnity 包 {name} 中资源名称不唯一：{assetName}；请使用完整工程路径。");
-        return (T)catalog.Get(exact[0].id);
+        if (paths.TryGetValue(path, out var direct) && MatchesType<T>(direct.type)) return (T)catalog.Get(direct.id);
+        if (!names.TryGetValue(path, out var matches)) return null;
+        AssetRecord found = null;
+        foreach (AssetRecord match in matches)
+        {
+            if (!MatchesType<T>(match.type)) continue;
+            if (found != null) throw new InvalidDataException($"RimUnity 包 {name} 中资源名称不唯一：{assetName}；请使用完整工程路径。");
+            found = match;
+        }
+        return found == null ? null : (T)catalog.Get(found.id);
     }
 
     //只筛选声明类型，查询不会实例化无关预制体。

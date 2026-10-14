@@ -10,4 +10,8 @@ Entries come from configured AssetBundle labels and manually added assets. Textu
 
 A full rebuild contains only the entries currently selected. It replaces existing data after every target completes export and structural validation. Use incremental mode to retain other entries. Failed checks, failed exports and cancellation during preparation do not replace published data. A failure during publication restores the previous version. Structural validation does not establish visual correctness in the game.
 
+Selected entries targeting the same mod are exported in one batch, reusing textures, materials, meshes and shader variants by asset ID. Before publication, the manager keeps only catalog entries and their dependencies, removes unreferenced historical files and stores identical payload files once under `blobs/`. Incremental mode also compacts the directory while retaining public entries that were not re-exported.
+
+JSON remains plain text. Whitespace and null fields are omitted while explicit zero values, false values, particle parameters and asset precision are retained. File deduplication does not merge the object identities of different asset IDs or reduce texture resolution. Single-prefab and per-item particle exports retain historical directories; use the [publish-copy API](ResourceLoading.md#distributing-content-assets) to compact those results for distribution.
+
 Missing scripts are recorded as warnings in the prefab and reported when the game loads it. Other exportable components remain usable. Shader Graph and script assets requiring separate compilation are identified in the list; deselect those entries to export the remaining content.

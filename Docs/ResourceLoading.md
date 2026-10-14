@@ -14,7 +14,8 @@ MyContentMod/
    ├─ Assemblies/MyContentMod.dll
    └─ Data/RimUnity/
       ├─ catalog.json
-      └─ exports/<generation>/...
+      ├─ exports/<generation>/...
+      └─ blobs/<内容哈希>.<扩展名>
 ```
 
 `LoadFolders.xml` 可通过 `<v1.7><li>1.7</li></v1.7>` 加载该版本的程序集和 Def。RimUnity 的 ModContentPack 加载入口固定读取 `mod.RootDir/1.7/Data/RimUnity`，不自动解析其它资源目录。
@@ -59,7 +60,8 @@ var template = AssetLoader.LoadBundleAsset<GameObject>(
 
 ## 缓存、共享与销毁
 
-- 清单和资源按目录缓存，在进程生命周期中复用；相同依赖不因每次 Load 重建。
+- 清单和资源按目录、资源 ID 缓存，在进程生命周期中复用；多个预制体引用同一材质、贴图或网格时只加载一次。逻辑路径和包内名称使用索引查找，JSON 从文件流直接解码。
+- `blobs/` 共享相同内容的磁盘文件；不同资源 ID 仍是不同对象，例如像素相同但色彩空间或采样方式不同的贴图。不同 Mod 的资源缓存独立，不按同名或同图强行合并。
 - Prefab 模板保持失活；实例保留导出的层级、字段、引用和活动状态。
 - 不修改或销毁加载器返回的共享材质、贴图和模板。需要实例材质参数时，优先使用渲染器的 MaterialPropertyBlock，或由业务创建并负责销毁独立 Material。
 - 在实例不再使用时销毁 GameObject；不要假设所有一次性粒子都会自动销毁根对象。
@@ -67,7 +69,17 @@ var template = AssetLoader.LoadBundleAsset<GameObject>(
 
 ## 发布内容资源
 
-发布时携带 `catalog.json` 和它引用的全部依赖文件。直接复制整个成功导出的 Data/RimUnity 目录最简单；若裁剪历史 generation，应计算清单及依赖中的文件闭包，不要只保留最新目录——未重导出的入口可能仍指向旧 generation。
+发布时携带 `catalog.json` 和它引用的全部依赖文件，包括 `blobs/`。构建管理器会自动整理发布目录；直接调用 `PrefabExporter.Export` 或逐项粒子导出的结果，可在自己的 Editor 脚本中生成一个精简副本，无需重新转换 Unity 资源：
+
+```csharp
+RimUnity.Editor.ExportStorage.CopyForPublish(
+    "C:/Mods/MyContentMod/1.7/Data/RimUnity",
+    "C:/Builds/MyContentMod/1.7/Data/RimUnity");
+```
+
+两个参数均为资源目录，不是 Mod 根目录。目标必须不存在或为空，且不能与源目录相同或互相包含。源目录不变；出现缺失依赖或非法路径会报错，不应发布失败的目标目录。将成功输出整体作为内容模组的 `1.7/Data/RimUnity` 分发。
+
+整理只保留公开入口及其依赖，压紧 JSON，并按 SHA-256 共享内容相同的贴图、字体、GLSL 等附属文件。资源 ID、逻辑路径和显式参数保留。不能仅复制最新 generation——未重导出的入口可能仍引用较早的文件。
 
 失败导出目录中的 `FAILED.txt`、批次报告、`.export.lock` 和临时文件不是运行必需资源。清单中的稳定 ID、相对路径与依赖应由导出器维护，不建议手工修改。
 

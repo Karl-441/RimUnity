@@ -56,7 +56,7 @@ namespace RimUnity.Editor { public static class RimUnityPublisher
                 target.Prepared = Path.Combine(target.Stage, "1.7/Data/RimUnity");
                 Directory.CreateDirectory(Path.Combine(target.Stage, "About"));
                 File.Copy(about, Path.Combine(target.Stage, "About/About.xml"));
-                if (!rebuild && Directory.Exists(target.Live)) CopyTree(target.Live, target.Prepared);
+                if (!rebuild && File.Exists(Path.Combine(target.Live, "catalog.json"))) ExportStorage.CopyForPublish(target.Live, target.Prepared);
             }
             EditorPrefs.SetString("RimUnity.ShaderTool", profile.shaderTool);
             EditorPrefs.SetString("RimUnity.GameRoot", profile.gameRoot);
@@ -65,6 +65,7 @@ namespace RimUnity.Editor { public static class RimUnityPublisher
             foreach (var target in targets)
             {
                 int before = errors.Count;
+                var requests = new List<ExportRequest>();
                 foreach (var entry in target.Entries)
                 {
                     if (EditorUtility.DisplayCancelableProgressBar("RimUnity 明文导出", entry.path, (float)finished / entries.Length))
@@ -72,7 +73,7 @@ namespace RimUnity.Editor { public static class RimUnityPublisher
                     log("导出：" + entry.path);
                     try
                     {
-                        PrefabExporter.Export(target.Stage, new ExportRequest {
+                        requests.Add(new ExportRequest {
                             asset = AssetDatabase.LoadMainAssetAtPath(entry.path), ui = entry.ui,
                             path = "Bundles/" + entry.bundle + "/" + entry.path, description = "源资源：" + entry.path });
                     }
@@ -84,6 +85,11 @@ namespace RimUnity.Editor { public static class RimUnityPublisher
                     finished++;
                 }
                 if (errors.Count != before) continue;
+                //同一目标一次导出，共享 GUID、材质与 Shader 变体缓存。
+                PrefabExporter.Export(target.Stage, requests.ToArray());
+                string compact = Path.Combine(target.Stage, "compact");
+                ExportStorage.CopyForPublish(target.Prepared, compact);
+                target.Prepared = compact;
                 Validate(target.Prepared);
                 //跨磁盘先复制到目标盘，再通过同盘重命名发布。
                 string data = Path.GetDirectoryName(target.Live);
