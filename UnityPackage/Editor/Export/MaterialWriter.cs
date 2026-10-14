@@ -77,7 +77,9 @@ namespace RimUnity.Editor
             string sourcePath = UnityEditor.AssetDatabase.GetAssetPath(material.shader);
             bool unlitSurface = sourcePath.EndsWith(".shader", StringComparison.OrdinalIgnoreCase)
                 && System.Text.RegularExpressions.Regex.IsMatch(System.IO.File.ReadAllText(sourcePath), @"(?m)^\s*#pragma\s+surface\s+\w+\s+Unlit\b");
-            if (unlitSurface)
+            bool builtInGraph = sourcePath.EndsWith(".shader", StringComparison.OrdinalIgnoreCase)
+                && System.IO.File.ReadAllText(sourcePath).Contains("BuiltInLitSubTarget");
+            if (unlitSurface || builtInGraph)
                 data.members.Add(new MemberData { name = "shader", value = new ValueData { kind = "asset", text = resources.AddShader(material, ui, path, 0) } });
             else if (material.passCount > 1)
             {

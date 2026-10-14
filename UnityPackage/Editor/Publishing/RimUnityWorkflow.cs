@@ -16,7 +16,7 @@ namespace RimUnity.Editor { public static class RimUnityWorkflow
     [Serializable] public sealed class Profile
     {
         public string repository, shaderTool, gameRoot;
-        public bool auditOnReload;
+        public bool auditOnReload, disableCastShadows, disableReceiveShadows, disableLightProbes, disableReflectionProbes;
         public Mapping[] mappings;
     }
     [Serializable] public sealed class Mapping { public string bundle, mod; }
@@ -135,7 +135,7 @@ namespace RimUnity.Editor { public static class RimUnityWorkflow
                 if (entry.status != "pending") continue;
                 try
                 {
-                    PrefabExporter.Export(Path.Combine(profile.repository, entry.mod), new ExportRequest {
+                    PrefabExporter.Export(Path.Combine(profile.repository, entry.mod), new ExportOptions { disableCastShadows = profile.disableCastShadows, disableReceiveShadows = profile.disableReceiveShadows, disableLightProbes = profile.disableLightProbes, disableReflectionProbes = profile.disableReflectionProbes }, new ExportRequest {
                         asset = AssetDatabase.LoadMainAssetAtPath(entry.path), ui = entry.ui,
                         path = "Bundles/" + entry.bundle + "/" + entry.path, description = "源资源：" + entry.path });
                     entry.status = "exported";

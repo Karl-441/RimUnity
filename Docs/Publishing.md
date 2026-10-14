@@ -15,3 +15,8 @@ dotnet run --project Tools/PublishingTests/PublishingTests.csproj -p:UnityEditor
 ```
 
 测试覆盖完整替换、增量保留、取消、多目标失败恢复、并发发布锁，以及数据和 shader 文件路径验证。
+## Renderer 导出设置
+
+窗口的输出与工具配置页提供四个独立选项：自动关闭 Cast Shadows、接收阴影、光照探针、反射探针。默认均关闭；保存到制作项目的 `ProjectSettings/RimUnity.json`。开启的选项仅作用于导出副本，记录资源、层级、组件及原值。源 prefab 和模型资源不保存修改；反射探针开关不改变材质的 Cubemap。关闭开关时仍执行原有严格检查。
+
+程序调用可使用 `PrefabExporter.Export(modDirectory, new ExportOptions { disableCastShadows = true }, requests)`。原有 Export 重载保持严格模式，不使用静态全局开关。

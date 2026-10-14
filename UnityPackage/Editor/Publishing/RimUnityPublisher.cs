@@ -69,7 +69,7 @@ namespace RimUnity.Editor { public static class RimUnityPublisher
                     if (EditorUtility.DisplayCancelableProgressBar("RimUnity 明文导出", entry.path, (float)finished / entries.Length))
                         throw new OperationCanceledException("已取消；正式数据未替换。");
                     log("导出：" + entry.path);
-                    PrefabExporter.Export(target.Stage, new ExportRequest {
+                    PrefabExporter.Export(target.Stage, new ExportOptions { disableCastShadows = profile.disableCastShadows, disableReceiveShadows = profile.disableReceiveShadows, disableLightProbes = profile.disableLightProbes, disableReflectionProbes = profile.disableReflectionProbes, log = log }, new ExportRequest {
                         asset = AssetDatabase.LoadMainAssetAtPath(entry.path), ui = entry.ui,
                         path = "Bundles/" + entry.bundle + "/" + entry.path, description = "源资源：" + entry.path });
                     finished++;

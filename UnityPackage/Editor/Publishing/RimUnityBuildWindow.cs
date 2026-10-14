@@ -238,6 +238,13 @@ namespace RimUnity.Editor { public sealed class RimUnityBuildWindow : EditorWind
         if (GUILayout.Button("新增输出映射")) mappings.Add(new RimUnityWorkflow.Mapping { bundle = "", mod = "" });
         profile.mappings = mappings.ToArray();
         GUILayout.Space(14);
+        GUILayout.Label("导出设置", EditorStyles.boldLabel);
+        profile.disableCastShadows = EditorGUILayout.Toggle("自动关闭 Cast Shadows", profile.disableCastShadows);
+        profile.disableReceiveShadows = EditorGUILayout.Toggle("自动关闭接收阴影", profile.disableReceiveShadows);
+        profile.disableLightProbes = EditorGUILayout.Toggle("自动关闭光照探针", profile.disableLightProbes);
+        profile.disableReflectionProbes = EditorGUILayout.Toggle("自动关闭反射探针", profile.disableReflectionProbes);
+        EditorGUILayout.HelpBox("勾选后仅关闭导出副本中的对应 Renderer 设置，并记录位置；原 prefab 不变。未勾选项保持严格检查。反射探针选项不会删除材质自身的 Cubemap。设置后点击下方保存配置。", MessageType.Info);
+        GUILayout.Space(14);
         GUILayout.Label("制作工具链", EditorStyles.boldLabel);
         profile.repository = Folder("内容仓库", profile.repository);
         profile.gameRoot = Folder("RimWorld 1.7", profile.gameRoot);
@@ -272,7 +279,7 @@ namespace RimUnity.Editor { public sealed class RimUnityBuildWindow : EditorWind
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("打开检查报告"))
         {
-            string path = Path.Combine(profile.repository, "Library/RimUnity/Reports/inventory.json");
+            string path = Path.GetFullPath("Library/RimUnity/Reports/inventory.json");
             if (File.Exists(path)) EditorUtility.RevealInFinder(path);
         }
         if (GUILayout.Button("复制执行记录")) EditorGUIUtility.systemCopyBuffer = string.Join("\n", messages);
@@ -291,7 +298,7 @@ namespace RimUnity.Editor { public sealed class RimUnityBuildWindow : EditorWind
     }
     private void SaveLog()
     {
-        string directory = Path.Combine(profile.repository, "Library/RimUnity/Reports");
+        string directory = Path.GetFullPath("Library/RimUnity/Reports");
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "window-export.log");
         File.WriteAllText(path, string.Join("\n", messages));

@@ -74,4 +74,14 @@ RimUnityPublisher.Validate(vroot);
 Check(true, "Shader stage and descriptor paths use content root");
 File.WriteAllText(Path.Combine(vroot, "old.json"), "{\"vertexFile\":\"../escape.vert\"}");
 Failure(() => RimUnityPublisher.Validate(vroot), "path traversal rejected");
+profile.disableCastShadows = profile.disableReceiveShadows = profile.disableLightProbes = profile.disableReflectionProbes = true;
+RimUnityPublisher.Export(profile, new[] { E(Mod("renderer-options")) }, true, messages.Add);
+Check(PrefabExporter.LastOptions.disableCastShadows && PrefabExporter.LastOptions.disableReceiveShadows
+    && PrefabExporter.LastOptions.disableLightProbes && PrefabExporter.LastOptions.disableReflectionProbes,
+    "all renderer export policies reach the framework exporter");
+profile.disableCastShadows = profile.disableReceiveShadows = profile.disableLightProbes = profile.disableReflectionProbes = false;
+RimUnityPublisher.Export(profile, new[] { E(Mod("strict-options")) }, true, messages.Add);
+Check(!PrefabExporter.LastOptions.disableCastShadows && !PrefabExporter.LastOptions.disableReceiveShadows
+    && !PrefabExporter.LastOptions.disableLightProbes && !PrefabExporter.LastOptions.disableReflectionProbes,
+    "disabled policies remain strict on the next export");
 Console.WriteLine("All publication tests passed. Scratch data: " + run);
