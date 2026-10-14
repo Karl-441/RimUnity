@@ -25,6 +25,7 @@ instance.transform.position = new RimUnity.Vector3(x, y, z);
 - [类型与脚本用法](Docs/Usage.md)
 - [资源载入与目录约定](Docs/ResourceLoading.md)
 - [制作、导出与发布工作流](Docs/Workflow.md)
+- [Unity 明文资源构建管理器](Docs/Publishing.md)
 - [粒子导出与使用](Docs/ParticleQuickStart.md) · [粒子模块](Docs/ParticleExpansion.md)
 - [自定义 Shader](Docs/CustomShaderConversion.md) · [IMGUI 材质](Docs/ImmediateUI.md)
 - [颜色与 Bloom](Docs/ColorAndBloom.md)

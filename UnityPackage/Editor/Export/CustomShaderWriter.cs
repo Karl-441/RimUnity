@@ -47,7 +47,7 @@ namespace RimUnity.Editor
             string hash;
             using (SHA256 sha = SHA256.Create()) hash = BitConverter.ToString(sha.ComputeHash(Encoding.UTF8.GetBytes(identity))).Replace("-", "").ToLowerInvariant();
             string id = "RimUnity_Custom_" + hash;
-            string output = Path.GetFullPath(Path.Combine(directory, id));
+            string output = Path.GetFullPath(Path.Combine(directory, "s_" + CompactHash(hash)));
             string descriptor = Path.Combine(output, "shader.json");
             //只复用当前导出暂存目录的成功记录，跨批次由主导出器管理发布目录。
             if (!File.Exists(descriptor))
@@ -77,6 +77,12 @@ namespace RimUnity.Editor
             return new CustomShaderExport { Id = id, Directory = output, Manifest = manifest };
         }
 
+        internal static string CompactHash(string hash)
+        {
+            var bytes = new byte[hash.Length / 2];
+            for (int i = 0; i < bytes.Length; i++) bytes[i] = Convert.ToByte(hash.Substring(i * 2, 2), 16);
+            return Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        }
         //同时排空两个输出管道，编译错误完整反馈给 Unity 导出窗口。
         private static void Run(string tool, string gameRoot, string source, string output, string profile, string keywords, string path, int pass)
         {
@@ -105,3 +111,5 @@ namespace RimUnity.Editor
             match.Groups[1].Value + match.Groups[1].Value + (match.Groups[2].Value == "\"" ? "\\\"" : "")) + "\"";
     }
 }
+
+

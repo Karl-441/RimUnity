@@ -27,6 +27,16 @@ public abstract class Texture : Object
         if (Wrappers.TryGetValue(native, out Texture result)) return result;
         throw new InvalidOperationException("原生贴图未登记 RimUnity 所有权：" + native.Name);
     }
+    //引用外部引擎贴图，不接管其释放责任。
+    public static Texture FromNative(Waylith.Rendering.Texture native)
+    {
+        ArgumentNullException.ThrowIfNull(native);
+        return Wrappers.TryGetValue(native, out Texture value) ? value : new NativeTextureReference(native);
+    }
+    private sealed class NativeTextureReference : Texture
+    {
+        internal NativeTextureReference(Waylith.Rendering.Texture native) : base(native, false) { }
+    }
     protected override void Release() { Wrappers.Remove(NativeTexture); if (OwnsResource) NativeTexture.Dispose(); }
 }
 

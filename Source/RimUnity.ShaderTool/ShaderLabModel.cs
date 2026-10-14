@@ -14,6 +14,7 @@ public sealed class ShaderLabManifest
     public string fragmentEntry { get; set; }
     public string vertexFile { get; set; } = "shader.vert.glsl";
     public string fragmentFile { get; set; } = "shader.frag.glsl";
+    public Dictionary<string, string> arrays { get; set; } = new();
     public List<ShaderLabProperty> properties { get; set; } = new();
     public Dictionary<string, string> tags { get; set; } = new();
     public Dictionary<string, string> states { get; set; } = new();

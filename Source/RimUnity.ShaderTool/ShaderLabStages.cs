@@ -24,6 +24,7 @@ internal static class ShaderLabStages
         Match vertexBlock = Block(vertex), fragmentBlock = Block(fragment);
         if (vertexBlock != null && fragmentBlock == null) fragment = Insert(fragment, vertexBlock.Value);
         if (fragmentBlock != null && vertexBlock == null) vertex = Insert(vertex, fragmentBlock.Value);
+        (vertex, fragment) = RemoveUnusedMaterialMembers(vertex, fragment);
         Dictionary<int, Match> vertexTextures = Textures(vertex), fragmentTextures = Textures(fragment);
         if (vertexTextures.Keys.Union(fragmentTextures.Keys).Count() > 16) throw new NotSupportedException("每阶段最多支持 16 个纹理采样器。");
         foreach (var item in vertexTextures)
@@ -42,13 +43,38 @@ internal static class ShaderLabStages
         ShaderCompiler.Verify(vertexPath); ShaderCompiler.Verify(fragmentPath);
     }
 
+    // Slang retains unused members in ConstantBuffer structs. Keeping them can exceed
+    // the host's material capacity. Remove only members unused by BOTH final programs.
+    private static (string Vertex, string Fragment) RemoveUnusedMaterialMembers(string vertex, string fragment)
+    {
+        var blocks = new[] { Block(vertex), Block(fragment) }.Where(b => b != null).ToArray();
+        var used = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var pair in new[] { (vertex, Block(vertex)), (fragment, Block(fragment)) })
+        {
+            if (pair.Item2 == null) continue;
+            string instance = Regex.Match(pair.Item2.Value, @"\}\s*(\w+)\s*;").Groups[1].Value;
+            string program = pair.Item1.Replace(pair.Item2.Value, "");
+            // Whole-block copies require the original struct layout; do not prune them.
+            if (Regex.IsMatch(program, @"\b" + Regex.Escape(instance) + @"\b(?!\s*\.)")) return (vertex, fragment);
+            foreach (Match access in Regex.Matches(program, @"\b" + Regex.Escape(instance) + @"\s*\.\s*(\w+)")) used.Add(access.Groups[1].Value);
+        }
+        string Trim(string program) => Regex.Replace(program, @"layout\(([^)]*)\)\s*uniform\s+\w+\s*\{([^{}]*)\}\s*\w+\s*;", block =>
+        {
+            if (!Regex.IsMatch(block.Groups[1].Value, @"\bset\s*=\s*2\b") || !Regex.IsMatch(block.Groups[1].Value, @"\bbinding\s*=\s*0\b")) return block.Value;
+            string body = Regex.Replace(block.Groups[2].Value, @"(?m)^\s*(?:float|int|uint|[iu]?vec[234]|mat[234])\s+(\w+)\s*;[^\S\r\n]*(?://[^\r\n]*)?\r?\n?", member => used.Contains(member.Groups[1].Value) ? member.Value : "");
+            return block.Value.Replace(block.Groups[2].Value, body);
+        });
+        return (Trim(vertex), Trim(fragment));
+    }
+
     //材质块只支持唯一的 set2/binding0，保留块实例名以便复制未使用的声明。
     private static Match Block(string source) => Regex.Matches(source, @"layout\(([^)]*)\)\s*uniform\s+\w+\s*\{[^{}]*\}\s*\w+\s*;").Cast<Match>()
         .SingleOrDefault(m => Regex.IsMatch(m.Groups[1].Value, @"\bset\s*=\s*2\b") && Regex.IsMatch(m.Groups[1].Value, @"\bbinding\s*=\s*0\b"));
     //合并后的采样器绑定号不需要连续，按原绑定保留即可。
-    private static Dictionary<int, Match> Textures(string source) => Regex.Matches(source, @"layout\(([^)]*)\)\s*uniform\s+sampler2D\s+\w+\s*;[^\S\r\n]*(?://[^\r\n]*)?").Cast<Match>()
+    private static Dictionary<int, Match> Textures(string source) => Regex.Matches(source, @"layout\(([^)]*)\)\s*uniform\s+sampler(?:2D|Cube)\s+\w+\s*;[^\S\r\n]*(?://[^\r\n]*)?").Cast<Match>()
         .Where(m => Regex.IsMatch(m.Groups[1].Value, @"\bset\s*=\s*2\b"))
         .ToDictionary(m => int.Parse(Regex.Match(m.Groups[1].Value, @"\bbinding\s*=\s*(\d+)").Groups[1].Value));
     //声明放在版本指令之后，不打断原程序或已有行号指令。
     private static string Insert(string source, string declaration) => source.Insert(source.IndexOf('\n') + 1, declaration + "\n");
 }
+

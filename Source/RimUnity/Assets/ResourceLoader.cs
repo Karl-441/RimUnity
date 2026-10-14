@@ -34,6 +34,10 @@ internal static class ResourceLoader
                 var clip = new AnimationClip(); reader.Apply(clip, data.members); result = clip; break;
             case "RuntimeAnimatorController":
                 var controller = new RuntimeAnimatorController(); reader.Apply(controller, data.members); result = controller; break;
+            case "Cubemap":
+                var cube = Cubemap.Load(data.name, Get<int>("width"), Get<int>("mipCount"), File.ReadAllBytes(catalog.Resolve(Get<string>("file"))), Get<bool>("linear"));
+                cube.wrapMode = Get<TextureWrapMode>("wrapMode"); cube.filterMode = Get<FilterMode>("filterMode"); cube.anisoLevel = Get<int>("anisoLevel"); cube.mipMapBias = Get<float>("mipMapBias");
+                result = cube; break;
             case "Texture3D":
                 var volume = new Texture3D(Get<int>("width"), Get<int>("height"), Get<int>("depth"), TextureFormat.RGBAFloat, false, true);
                 volume.SetPixels(Get<Color[]>("pixels")); volume.Apply(false, false);
@@ -109,3 +113,4 @@ internal static class ResourceLoader
         material.SetVector(name, value);
     }
 }
+
