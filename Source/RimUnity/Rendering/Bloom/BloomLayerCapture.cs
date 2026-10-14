@@ -11,8 +11,8 @@ internal static class BloomLayerCapture
 {
     internal static readonly byte MapPass = (byte)AccessTools.Field(
         AccessTools.TypeByName("RimWorldWaylith.Rendering.RenderPassIds"), "MapMain").GetValue(null);
-    private delegate FinalDrawItem RentDraw(Matrix4x4 matrix, byte passId, MeshDrawGeometry mesh, MaterialBinding binding,
-        bool hasOverride, in MaterialUniformBytes uniforms, in MaterialTextureResourceSet<Texture> resources,
+    private delegate FinalDrawItem RentDraw(System.Numerics.Matrix4x4 matrix, byte passId, MeshDrawGeometry mesh, MaterialBinding binding,
+        bool hasOverride, in MaterialUniformBytes uniforms, in MaterialTextureResourceSet<Waylith.Rendering.Texture> resources,
         int order, int queue, InstancedDrawInfo instancing, int layer, ushort hostOrder, InstanceStorageBinding[] storage);
     private static readonly RentDraw Rent = AccessTools.Method(typeof(FinalDrawItem), "Rent").CreateDelegate<RentDraw>();
     private static readonly AccessTools.FieldRef<FinalDrawItem, DrawSortKey> SortKey =

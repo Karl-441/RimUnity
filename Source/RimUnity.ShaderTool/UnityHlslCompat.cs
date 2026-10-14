@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace RimUnity.ShaderTool;
 
-//兼容层只实现可对应到 Waylith 的函数，不用空宏吞掉光照、雾或蒙皮。
+//转换已支持的 HLSL 函数，未支持的光照、雾和蒙皮调用明确报错。
 internal static class UnityHlslCompat
 {
     //Windows 非实例化、无雾变体的 Unity 宏；未实现的光照函数保持编译错误。
