@@ -28,7 +28,7 @@ internal static class ShaderLabMetadata
             }
             else if (property.defaultTexture != null)
             {
-                string textureDefault = property.defaultTexture switch { "white" or "" => "white", "black" => "black", "gray" => "gray", _ => null };
+                string textureDefault = property.type.Equals("Cube", StringComparison.OrdinalIgnoreCase) ? "gray" : property.defaultTexture switch { "white" or "" => "white", "black" => "black", "gray" => "gray", _ => null };
                 if (textureDefault != null) glsl = Regex.Replace(glsl, @"(?m)^(layout\([^\r\n]+\)\s+uniform\s+\w+\s+" + Regex.Escape(property.name) + @"\s*;)[^\S\r\n]*$", "$1 // @default = " + textureDefault);
             }
         }
@@ -36,3 +36,4 @@ internal static class ShaderLabMetadata
         return Regex.Replace(glsl, @"(?m)^(\s*vec4\s+\w+_ST\s*;)[^\S\r\n]*$", "$1 // @default = vec4(0, 0, 1, 1)");
     }
 }
+

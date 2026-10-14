@@ -13,7 +13,8 @@ internal static class MaterialColorSpace
         if (!ShaderPropertyId.TryGetName(nameID, out string name)) return;
         string flag = ShaderColorSpace.TextureFlag + name;
         if (!__instance.HasProperty(flag)) return;
-        bool srgb = value is UnityEngine.Texture2D texture && !texture.CoreTexture.CpuData.Linear;
+        bool srgb = value is CubemapTexture cube ? !cube.Linear : value is UnityEngine.Texture2D texture && !texture.CoreTexture.CpuData.Linear;
         __instance.SetFloat(flag, srgb ? 1 : 0);
     }
 }
+

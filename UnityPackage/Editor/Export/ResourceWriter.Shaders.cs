@@ -23,13 +23,16 @@ namespace RimUnity.Editor
             if (dependencies.Count > 0) dependencies.Peek().Add(id);
             if (records.ContainsKey(id)) return id;
             shader.key = id;
-            shader.vertexFile = relative + "/" + exported.Id + "/" + (string)exported.Manifest["vertexFile"];
-            shader.fragmentFile = relative + "/" + exported.Id + "/" + (string)exported.Manifest["fragmentFile"];
+            string folder = Path.GetFileName(exported.Directory);
+            shader.vertexFile = relative + "/" + folder + "/" + (string)exported.Manifest["vertexFile"];
+            shader.fragmentFile = relative + "/" + folder + "/" + (string)exported.Manifest["fragmentFile"];
             shader.descriptorFile = relative + "/" + exported.Id + "/shader.json";
-            string file = id + ".json";
+            string file = "s_" + CustomShaderWriter.CompactHash(hash) + ".json";
             ExportJson.Write(Path.Combine(directory, file), shader);
             records.Add(id, new AssetRecord { id = id, name = material.shader.name, description = ui ? "UI GLSL" : "世界 GLSL", path = "__assets/" + id, file = relative + "/" + file, type = "Shader" });
             return id;
         }
     }
 }
+
+

@@ -16,7 +16,7 @@ internal static class ShaderColorSpace
     {
         if (fragment.Contains(Marker)) return (vertex, fragment);
         vertex = SpecializeSamplers(vertex); fragment = SpecializeSamplers(fragment);
-        var textures = Regex.Matches(vertex + "\n" + fragment, @"layout\([^)]*set\s*=\s*2[^)]*\)\s*uniform\s+sampler2D\s+(\w+)\s*;")
+        var textures = Regex.Matches(vertex + "\n" + fragment, @"layout\([^)]*set\s*=\s*2[^)]*\)\s*uniform\s+sampler(?:2D|Cube)\s+(\w+)\s*;")
             .Cast<Match>().Select(m => m.Groups[1].Value).Distinct().OrderBy(s => s, StringComparer.Ordinal).ToArray();
         Match block = MaterialBlock(fragment);
         if (!block.Success) block = MaterialBlock(vertex);
@@ -42,7 +42,7 @@ internal static class ShaderColorSpace
     //单纹理帮助函数按实参展开，保留 UV、插帧和采样逻辑，并让编码标记对应实际贴图。
     private static string SpecializeSamplers(string source)
     {
-        var functions = Regex.Matches(source, @"\bvec4\s+(\w+)\s*\(\s*sampler2D\s+(\w+)\s*\)\s*\{");
+        var functions = Regex.Matches(source, @"\bvec4\s+(\w+)\s*\(\s*sampler(?:2D|Cube)\s+(\w+)\s*\)\s*\{");
         foreach (Match function in functions.Cast<Match>().Reverse())
         {
             int end = function.Index + function.Length, depth = 1;
@@ -60,7 +60,7 @@ internal static class ShaderColorSpace
             });
             source = source.Insert(function.Index, string.Concat(declarations));
         }
-        if (Regex.IsMatch(source, @"\([^;{}]*\bsampler2D\s+\w+[^;{}]*\)\s*\{"))
+        if (Regex.IsMatch(source, @"\([^;{}]*\bsampler(?:2D|Cube)\s+\w+[^;{}]*\)\s*\{"))
             throw new NotSupportedException("Linear 转换暂不接受多参数纹理函数，请将采样放到使用全局贴图的函数中。");
         return source;
     }
@@ -133,3 +133,4 @@ internal static class ShaderColorSpace
         vec4 RU_SampleLinear(vec4 c, float srgb) { return srgb > 0.5 ? RU_Linear(c) : c; }
         """;
 }
+

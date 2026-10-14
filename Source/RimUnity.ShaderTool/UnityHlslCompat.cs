@@ -40,6 +40,7 @@ internal static class UnityHlslCompat
         #define SAMPLE_DEPTH_TEXTURE_PROJ(tex,uv) tex2Dproj(tex,uv).r
         #define V2F_SHADOW_CASTER_NOPOS
         #define UnityWorldSpaceViewDir(position) (_WorldSpaceCameraPos - (position).xyz)
+        #define WorldSpaceViewDir(position) (_WorldSpaceCameraPos - mul(unity_ObjectToWorld, (position)).xyz)
         """;
     //Unity 包包含由小型兼容头替代，本地自定义包含由转换入口先展开。
     internal static string Prepare(string source)
@@ -90,6 +91,7 @@ internal static class UnityHlslCompat
             float4 UnityObjectToClipPos(float3 p) { return UnityObjectToClipPos(float4(p, 1)); }
             float3 TransformObjectToWorld(float3 p) { return mul(RU_Object.model, float4(p, 1)).xyz; }
             float4 TransformWorldToHClip(float3 p) { return mul(RU_Camera.ViewProj, float4(p, 1)); }
+            float4 UnityWorldToClipPos(float3 p) { return TransformWorldToHClip(p); }
             float3 UnityObjectToWorldNormal(float3 normal) {
                 float3x3 m = (float3x3)RU_Object.model;
                 float3x3 cofactors = float3x3(cross(m[1],m[2]), cross(m[2],m[0]), cross(m[0],m[1]));
@@ -122,6 +124,8 @@ internal static class UnityHlslCompat
             #define SAMPLE_TEXTURE2D(tex,samp,uv) tex.Sample(samp,float2((uv).x,1-(uv).y))
             #define SAMPLE_TEXTURE2D_LOD(tex,samp,uv,lod) tex.SampleLevel(samp,float2((uv).x,1-(uv).y),lod)
             #define SAMPLE_TEXTURE2D_BIAS(tex,samp,uv,bias) tex.SampleBias(samp,float2((uv).x,1-(uv).y),bias)
+            float4 ComputeGrabScreenPos(float4 p) { float4 r = p * 0.5; r.xy = float2(r.x, -r.y) + r.w; r.zw = p.zw; return r; }
+            float3 UnpackNormal(float4 n) { n.x *= n.w; float2 xy = n.xy * 2 - 1; return float3(xy, sqrt(1 - saturate(dot(xy, xy)))); }
             float UnityGet2DClipping(float2 p, float4 r) { float2 v = step(r.xy,p)*step(p,r.zw); return v.x*v.y; }
             struct appdata_base { float4 vertex : POSITION; float3 normal : NORMAL; float4 texcoord : TEXCOORD0; };
             struct appdata_tan { float4 vertex : POSITION; float4 tangent : TANGENT; float3 normal : NORMAL; float4 texcoord : TEXCOORD0; };
@@ -157,3 +161,5 @@ internal static class UnityHlslCompat
         return annotations + source;
     }
 }
+
+

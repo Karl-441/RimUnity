@@ -65,6 +65,7 @@ namespace RimUnity.Editor
                     data.type = "Light";
                     Put("type", light.type); Put("color", light.color); Put("intensity", light.intensity); Put("range", light.range);
                 }
+                else if (asset is Cubemap cube) Cube(cube, data, writer, path, id);
                 else if (asset is Texture3D volume)
                 {
                     if (!volume.isReadable) throw new NotSupportedException(path + "：三维向量纹理需要启用 Read/Write 才能导出浮点体素。");
@@ -167,3 +168,4 @@ namespace RimUnity.Editor
         }
     }
 }
+

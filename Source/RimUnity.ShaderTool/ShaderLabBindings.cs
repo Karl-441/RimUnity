@@ -17,6 +17,7 @@ internal static class ShaderLabBindings
         source = UnityColorFunctions.Add(source);
         source = ShaderPreprocessor.Run((shader.Manifest.colorSpace == "Gamma" ? "#define UNITY_COLORSPACE_GAMMA 1\n" : "")
             + string.Join("\n", shader.Manifest.keywords.Select(k => "#define " + k + " 1")) + "\n" + UnityHlslCompat.Macros + "\n" + source);
+        source = ShaderLoopScopes.Adapt(source);
         source = GroundDepthAdapter.Adapt(source, shader.Manifest);
         //共享包含会声明仅阴影变体使用的纹理；实际变体没有任何引用时不产生绑定。
         source = Regex.Replace(source, @"\b(?:uniform\s+)?(?:sampler2D|sampler3D)\s+(\w+)\s*;", m =>
@@ -25,11 +26,11 @@ internal static class ShaderLabBindings
         source = Regex.Replace(source, @"\bcbuffer\s+UnityPerMaterial\s*\{([^{}]*)\}\s*;?", "$1");
         //逗号分隔的数值和纹理声明先展开，保证每个参数都有对应的材质绑定。
         int[] commaDepths = Depths(source);
-        source = Regex.Replace(source, @"\b((?:uniform\s+)?(?:float(?:[1-4](?:x[1-4])?)?|int[1-4]?|uint[1-4]?|sampler2D|Texture2D(?:\s*<\s*float4\s*>)?|SamplerState))\s+(\w+(?:\s*,\s*\w+)+)\s*;", match =>
+        source = Regex.Replace(source, @"\b((?:uniform\s+)?(?:float(?:[1-4](?:x[1-4])?)?|int[1-4]?|uint[1-4]?|sampler2D|samplerCUBE|Texture2D(?:\s*<\s*float4\s*>)?|SamplerState))\s+(\w+(?:\s*,\s*\w+)+)\s*;", match =>
             commaDepths[match.Index] == 0
                 ? string.Join("\n", match.Groups[2].Value.Split(',').Select(name => match.Groups[1].Value + " " + name.Trim() + ";"))
                 : match.Value);
-        var declarations = Regex.Matches(source, @"\b(?:(uniform)\s+)?(float(?:[1-4](?:x[1-4])?)?|int[1-4]?|uint[1-4]?|sampler2D|Texture2D(?:\s*<\s*float4\s*>)?|SamplerState)\s+(\w+)\s*(;|\[[^\]]*\])");
+        var declarations = Regex.Matches(source, @"\b(?:(uniform)\s+)?(float(?:[1-4](?:x[1-4])?)?|int[1-4]?|uint[1-4]?|sampler2D|samplerCUBE|Texture2D(?:\s*<\s*float4\s*>)?|SamplerState)\s+(\w+)\s*(;|\[[^\]]*\])");
         int[] depths = Depths(source);
         foreach (Match declaration in declarations.Cast<Match>().Reverse())
         {
@@ -37,8 +38,18 @@ internal static class ShaderLabBindings
             string type = declaration.Groups[2].Value, name = declaration.Groups[3].Value;
             string prefix = source.Substring(Math.Max(0, declaration.Index - 15), Math.Min(15, declaration.Index));
             if (Regex.IsMatch(prefix, @"\b(static|const)\s*$")) continue;
-            if (declaration.Groups[4].Value != ";") throw new NotSupportedException("材质数组尚未支持：" + name);
-            var destination = type == "sampler2D" || type.StartsWith("Texture2D", StringComparison.Ordinal) ? textures : type == "SamplerState" ? samplers : uniforms;
+            if (declaration.Groups[4].Value != ";")
+            {
+                if (type is not ("float" or "float4")) throw new NotSupportedException("材质数组元素类型尚未支持：" + type + " " + name);
+                if (!Regex.IsMatch(declaration.Groups[4].Value, @"^\[\s*[1-9][0-9]*\s*\]$")) throw new NotSupportedException("材质数组需要正整数长度：" + name);
+                shader.Manifest.arrays.Add(name, type);
+                int end = declaration.Index + declaration.Length;
+                while (end < source.Length && char.IsWhiteSpace(source[end])) end++;
+                if (end >= source.Length || source[end] != ';') throw new NotSupportedException("带初始化器的材质数组尚未支持：" + name);
+                source = source.Remove(declaration.Index, end + 1 - declaration.Index);
+                continue;
+            }
+            var destination = type == "sampler2D" || type == "samplerCUBE" || type.StartsWith("Texture2D", StringComparison.Ordinal) ? textures : type == "SamplerState" ? samplers : uniforms;
             if (!destination.TryAdd(name, type)) throw new InvalidDataException("重复全局 Shader 声明：" + name);
             source = source.Remove(declaration.Index, declaration.Length);
         }
@@ -68,18 +79,24 @@ internal static class ShaderLabBindings
         foreach (var entry in textures.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
             int textureBinding = binding++;
-            header.AppendLine("[[vk::binding(" + textureBinding + ", 2)]] " + (entry.Value == "sampler2D" ? "Texture2D" : entry.Value) + " " + entry.Key + ";");
+            header.AppendLine("[[vk::binding(" + textureBinding + ", 2)]] " + (entry.Value == "sampler2D" ? "Texture2D" : entry.Value == "samplerCUBE" ? "TextureCube" : entry.Value) + " " + entry.Key + ";");
             header.AppendLine("// @rimunity-texture " + textureBinding + " " + entry.Key);
-            if (entry.Value == "sampler2D")
+            if (entry.Value == "sampler2D" || entry.Value == "samplerCUBE")
             {
                 string sampler = "RU_Sampler" + entry.Key;
                 header.AppendLine("[[vk::binding(" + binding++ + ", 2)]] SamplerState " + sampler + ";");
                 header.AppendLine("// @rimunity-combined " + textureBinding + " " + (binding - 1));
                 //采样时翻转 V，UV 动画与顶点运算仍在 Unity 的原始方向上执行。
-                foreach (string function in new[] { "tex2D", "tex2Dlod", "tex2Dbias", "tex2Dproj", "tex2Dgrad" })
+                foreach (string function in entry.Value == "samplerCUBE" ? new[] { "texCUBE", "texCUBElod", "texCUBEbias" } : new[] { "tex2D", "tex2Dlod", "tex2Dbias", "tex2Dproj", "tex2Dgrad" })
                     source = Regex.Replace(source, @"\b" + function + @"\s*\(\s*" + Regex.Escape(entry.Key) + @"\s*,", "RU_" + function + entry.Key + "(");
-                header.AppendLine(LegacyFunctions(entry.Key, sampler));
+                header.AppendLine(entry.Value == "samplerCUBE" ? CubeFunctions(entry.Key, sampler) : LegacyFunctions(entry.Key, sampler));
             }
+        }
+        foreach (var array in shader.Manifest.arrays.OrderBy(x => x.Key, StringComparer.Ordinal))
+        {
+            header.AppendLine("[[vk::binding(" + binding + ", 2)]] StructuredBuffer<" + array.Value + "> " + array.Key + ";");
+            header.AppendLine("// @rimunity-array " + binding + " " + array.Key);
+            binding++;
         }
         foreach (var entry in samplers.OrderBy(x => x.Key, StringComparer.Ordinal))
         {
@@ -98,6 +115,12 @@ internal static class ShaderLabBindings
     }
 
     //每个旧式纹理独立包装，GLSL 阶段才能把对应纹理和采样器准确合并。
+    private static string CubeFunctions(string texture, string sampler) => $$"""
+        float4 RU_texCUBE{{texture}}(float3 direction) { return {{texture}}.Sample({{sampler}}, direction); }
+        float4 RU_texCUBElod{{texture}}(float4 direction) { return {{texture}}.SampleLevel({{sampler}}, direction.xyz, direction.w); }
+        float4 RU_texCUBEbias{{texture}}(float4 direction) { return {{texture}}.SampleBias({{sampler}}, direction.xyz, direction.w); }
+        """;
+
     private static string LegacyFunctions(string texture, string sampler) => $$"""
         float4 RU_tex2D{{texture}}(float2 uv) { return {{texture}}.Sample({{sampler}}, float2(uv.x,1-uv.y)); }
         float4 RU_tex2D{{texture}}(float3 uv) { return RU_tex2D{{texture}}(uv.xy); }
@@ -117,3 +140,4 @@ internal static class ShaderLabBindings
         return result;
     }
 }
+

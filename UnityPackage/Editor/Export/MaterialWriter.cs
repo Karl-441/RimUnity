@@ -110,6 +110,10 @@ namespace RimUnity.Editor
                         Texture texture = material.GetTexture(name);
                         //空纹理保持 Shader 的白／黑／法线默认值，不写入覆盖项。
                         if (texture != null) Put(name, texture);
+                        else if (material.shader.GetPropertyTextureDimension(i) == UnityEngine.Rendering.TextureDimension.Cube)
+                            data.members.Add(new MemberData { name = name, value = new ValueData { kind = "asset", text = resources.DefaultGrayCube() } });
+                        else if (material.shader.GetPropertyTextureDefaultName(i) == "bump")
+                            data.members.Add(new MemberData { name = name, value = new ValueData { kind = "asset", text = resources.DefaultBumpTexture() } });
                         Vector2 scale = material.GetTextureScale(name), offset = material.GetTextureOffset(name);
                         Put(name + "_ST", new Vector4(scale.x, scale.y, offset.x, offset.y));
                         break;
@@ -128,3 +132,5 @@ namespace RimUnity.Editor
         }
     }
 }
+
+

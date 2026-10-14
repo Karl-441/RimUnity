@@ -10,9 +10,11 @@
     <Reference Include="Brutal.Core.Numerics" HintPath="$(RimWorldDir)/Brutal.Core.Numerics.dll" />
     <Reference Include="Brutal.Core.Common" HintPath="$(RimWorldDir)/Brutal.Core.Common.dll" />
     <Reference Include="Brutal.Core.Memory" HintPath="$(RimWorldDir)/Brutal.Core.Memory.dll" />
+    <Reference Include="Brutal.Vulkan.Vma" HintPath="$(RimWorldDir)/Brutal.Vulkan.Vma.dll" />
     <Reference Include="Brutal.Vulkan" HintPath="$(RimWorldDir)/Brutal.Vulkan.dll" />
     <Reference Include="Brutal.Vulkan.Abstractions" HintPath="$(RimWorldDir)/Brutal.Vulkan.Abstractions.dll" />
     <Compile Include="../../UnityPackage/Runtime/Serialization/*.cs" Link="Serialization/%(Filename)%(Extension)" />
     <Compile Include="../Shared/ShaderColorSpace.cs" Link="Rendering/ShaderColorSpace.cs" />
   </ItemGroup>
 </Project>
+

@@ -11,6 +11,12 @@ internal static class ShaderLabGlsl
     //游戏 GLSL 前端需要合并采样器，材质反射需要原始成员名和规范矩阵类型。
     internal static string Rewrite(string glsl, string hlsl)
     {
+        foreach (Match array in Regex.Matches(hlsl, @"// @rimunity-array (\d+) (\w+)"))
+        {
+            int binding = int.Parse(array.Groups[1].Value);
+            glsl = Regex.Replace(glsl, @"layout\(([^)]*)\)\s*(?:readonly\s+)?buffer\s+(\w+)\s*\{", block =>
+                Binding(block.Groups[1].Value, binding) ? block.Value.Replace("buffer " + block.Groups[2].Value, "buffer " + array.Groups[2].Value) : block.Value);
+        }
         Match fields = Regex.Match(hlsl, @"// @rimunity-material ([^\r\n]+)");
         if (fields.Success)
         {
@@ -35,8 +41,8 @@ internal static class ShaderLabGlsl
             if (texture == null && sampler == null) continue;
             if (texture == null || sampler == null) throw new InvalidDataException("纹理和采样器没有成对出现在 Slang 输出。");
             string textureName = texture.Groups[3].Value, samplerName = sampler.Groups[3].Value;
-            glsl = glsl.Replace(texture.Value, texture.Value.Replace("texture2D", "sampler2D")).Replace(sampler.Value, "");
-            glsl = Regex.Replace(glsl, @"\bsampler2D\s*\(\s*" + Regex.Escape(textureName) + @"\s*,\s*" + Regex.Escape(samplerName) + @"\s*\)", textureName);
+            glsl = glsl.Replace(texture.Value, texture.Value.Replace("texture2D", "sampler2D").Replace("textureCube", "samplerCube")).Replace(sampler.Value, "");
+            glsl = Regex.Replace(glsl, @"\bsampler(?:2D|Cube)\s*\(\s*" + Regex.Escape(textureName) + @"\s*,\s*" + Regex.Escape(samplerName) + @"\s*\)", textureName);
             if (Regex.IsMatch(glsl, @"\b" + Regex.Escape(samplerName) + @"\b"))
                 throw new NotSupportedException("采样器被跨纹理共享或传入自定义函数，需要显式迁移：" + samplerName);
         }
@@ -95,8 +101,10 @@ internal static class ShaderLabGlsl
     private static bool Binding(string layout, int binding) => Regex.IsMatch(layout, @"\bset\s*=\s*2\b")
         && Regex.IsMatch(layout, @"\bbinding\s*=\s*" + binding + @"\b");
     //资源声明允许跨行，layout 已由基础编译器归并。
-    private static Match Resource(string glsl, int binding) => Regex.Matches(glsl, @"layout\(([^)]*)\)\s*uniform\s+(texture2D|sampler)\s+(\w+)\s*;").Cast<Match>()
+    private static Match Resource(string glsl, int binding) => Regex.Matches(glsl, @"layout\(([^)]*)\)\s*uniform\s+(texture2D|textureCube|sampler)\s+(\w+)\s*;").Cast<Match>()
         .SingleOrDefault(m => Binding(m.Groups[1].Value, binding));
     //同步更名声明与使用处，避免局部结构副本保留旧成员名。
     private static string Rename(string source, string before, string after) => Regex.Replace(source, @"\b" + Regex.Escape(before) + @"\b", after);
 }
+
+
