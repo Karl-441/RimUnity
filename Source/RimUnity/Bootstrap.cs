@@ -19,7 +19,7 @@ public sealed class RimUnityMod : Mod
         Rendering.MaterialColorSpace.Install();
         Rendering.ShaderMaterialDefaults.Install();
         new Harmony("Chezhou.RimUnity").PatchAll(typeof(RimUnityMod).Assembly);
-        HostFrame.Install();
+        LongEventHandler.ExecuteWhenFinished(HostFrame.Install);
         Log.Message("[RimUnity] 运行时已加载；功能及验收状态见 Docs/Status.md。");
     }
 

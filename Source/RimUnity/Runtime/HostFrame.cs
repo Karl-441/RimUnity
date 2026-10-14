@@ -12,12 +12,13 @@ internal static class HostFrame
     private static Game lastGame;
     private static bool framePending;
 
-    //模组构造期间只安装一次帧回调。
+    //加载完成后在游戏主线程安装一次帧回调。
     internal static void Install()
     {
+        if (!UnityData.IsInMainThread) throw new InvalidOperationException("RimUnity 帧调度必须在游戏主线程安装。");
         if (application != null) return;
+        NativeRuntime.InitializeOnCurrentThread();
         application = EngineApplication.Instance ?? throw new InvalidOperationException("Waylith 主循环尚未创建。");
-        NativeRuntime.AssertThread();
         NativeRuntime.SceneOwnerProvider = () => Current.Game;
         NativeRuntime.ExceptionRaised += Report;
         NativeRuntime.HierarchyChanged += UI.Runtime.UguiDirty.Mark;

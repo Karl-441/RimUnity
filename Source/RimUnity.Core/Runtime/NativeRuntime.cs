@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace RimUnity.Runtime;
 
 //主线程对象注册和生命周期入口。
 public static partial class NativeRuntime
 {
-    private static readonly int MainThread = Environment.CurrentManagedThreadId;
+    private static int mainThread;
     private static readonly List<GameObject> Objects = new();
     private static readonly List<MonoBehaviour> Behaviours = new();
     private static readonly Queue<MonoBehaviour> Pending = new();
@@ -17,10 +18,22 @@ public static partial class NativeRuntime
     public static event Action<Exception, Object> ExceptionRaised;
     public static Func<object> SceneOwnerProvider { get; set; }
 
+    //由宿主在主线程显式初始化，类型首次加载不决定对象所属线程。
+    public static void InitializeOnCurrentThread()
+    {
+        int current = Environment.CurrentManagedThreadId;
+        int previous = Interlocked.CompareExchange(ref mainThread, current, 0);
+        if (previous != 0 && previous != current)
+            throw new InvalidOperationException($"RimUnity 已绑定线程 {previous}，不能改绑到线程 {current}。");
+    }
+
     //所有对象和 GPU 资源的所有权变更都限制在宿主主线程。
     public static void AssertThread()
     {
-        if (Environment.CurrentManagedThreadId != MainThread) throw new InvalidOperationException("RimUnity 对象操作必须在初始化运行时的主线程执行。");
+        int expected = Volatile.Read(ref mainThread);
+        if (expected == 0) throw new InvalidOperationException("RimUnity 运行时尚未在宿主主线程初始化。");
+        int current = Environment.CurrentManagedThreadId;
+        if (current != expected) throw new InvalidOperationException($"RimUnity 对象操作必须在主线程 {expected} 执行，当前线程为 {current}。");
     }
     public static IDisposable DeferLifecycle() { AssertThread(); deferDepth++; return new CreationScope(); }
     private sealed class CreationScope : IDisposable
