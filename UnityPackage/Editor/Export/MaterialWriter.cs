@@ -43,6 +43,7 @@ namespace RimUnity.Editor
             else
             {
                 WriteCustom(material, data, writer, path, resources, ui);
+                resources.WriteMaterialArrays(material, data, writer, path);
                 return;
             }
             if (ui)
@@ -82,12 +83,20 @@ namespace RimUnity.Editor
             {
                 if (ui) throw new NotSupportedException(path + "：UI 自定义多 Pass 尚未接通。");
                 var passes = new System.Collections.Generic.List<ValueData>();
+                var subshader = UnityEditor.ShaderUtil.GetShaderData(material.shader).ActiveSubshader;
+                if (subshader == null || subshader.PassCount != material.passCount)
+                    throw new InvalidOperationException(path + "：Unity 当前 SubShader 的 Pass 清单与材质不一致。");
+                int sourcePass = 0;
                 for (int i = 0; i < material.passCount; i++)
                 {
+                    // GrabPass occupies a Unity runtime slot but is represented by sceneGrab,
+                    // not a drawing program, in the source converter.
+                    if (subshader.GetPass(i).IsGrabPass) continue;
+                    int programPass = sourcePass++;
                     if (!material.GetShaderPassEnabled(material.GetPassName(i))) continue;
                     //无投影的 Renderer 不提交 ShadowCaster，不能把它当作第二个颜色 Pass。
                     if (IsShadowPass(material, i)) continue;
-                    passes.Add(new ValueData { kind = "asset", text = resources.AddShader(material, false, path + ".pass[" + i + "]", i) });
+                    passes.Add(new ValueData { kind = "asset", text = resources.AddShader(material, false, path + ".pass[" + i + "]", programPass) });
                 }
                 if (passes.Count == 0) throw new NotSupportedException(path + "：材质没有启用的颜色 Pass。");
                 data.members.Add(new MemberData { name = "shader", value = passes[0] });

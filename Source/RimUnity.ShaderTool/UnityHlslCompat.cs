@@ -70,7 +70,7 @@ internal static class UnityHlslCompat
         source = Regex.Replace(source, @"\bUNITY_MATRIX_P\b", "_RimUnity_Projection");
         //旧 Cg 允许条件表达式直接作为语句，显式括号避免 Slang 将比较号解析成泛型。
         //起始缩进不能跨行，也不能把多行赋值中问号前的空白当成条件。
-        source = Regex.Replace(source, @"(?m)^([ \t]*)(?=\S)([^;{}\r\n?=]+)\?\s*([^;{}\r\n:]+)\s*:\s*([^;{}\r\n]+);", "$1(($2) ? ($3) : ($4));");
+        source = Regex.Replace(source, @"(?m)^([ \t]*)(?=\S)(?!return\b)([^;{}\r\n?=]+)\?\s*([^;{}\r\n:]+)\s*:\s*([^;{}\r\n]+);", "$1(($2) ? ($3) : ($4));");
         return source;
     }
 

@@ -13,3 +13,6 @@ Tools/bin/
 *.suo
 *.log
 UnityPackage/Tools~/
+
+Tools/PublishingTests/obj/
+Tools/PublishingTests/bin/
