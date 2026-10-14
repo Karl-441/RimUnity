@@ -1,5 +1,7 @@
 # 自定义 Shader 导出
 
+[简体中文](CustomShaderConversion.md) | [English](en/CustomShaderConversion.md)
+
 ## 在 Unity 中导出
 
 1. 在 RimUnity 导出窗口中设置 RimWorld 安装目录与 `RimUnity.ShaderTool.exe` 路径。

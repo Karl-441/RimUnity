@@ -1,5 +1,7 @@
 # 明文资源构建管理器
 
+[简体中文](Publishing.md) | [English](en/Publishing.md)
+
 Unity 菜单：`RimUnity / 明文资源构建管理器`。通过本地 UPM 包安装时，窗口直接使用包内源码，无需复制脚本到 Assets。
 
 配置保存在制作项目的 `ProjectSettings/RimUnity.json`，选择和 UI 标记保存在 `ProjectSettings/RimUnityWindow.json`。首次打开无需配置文件；在“输出与工具配置”设置内容仓库、ShaderTool、游戏目录和 AB 标签对应的 Mod 根目录，然后保存。项目配置不应提交到 RimUnity 框架仓库。

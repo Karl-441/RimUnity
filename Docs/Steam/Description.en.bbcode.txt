@@ -1,0 +1,79 @@
+[h1]Create in Unity. Run in RimWorld 1.7.[/h1]
+
+[h2]Mod authors: download and install the exporter[/h2]
+[b][url=https://github.com/chezhou9413/RimUnity/releases/download/v0.1.5/com.chezhou.rimunity-0.1.5.tgz]Download RimUnity Exporter 0.1.5 directly (includes ShaderTool)[/url][/b]
+[url=https://github.com/chezhou9413/RimUnity/blob/main/Docs/en/ExporterSetup.md]Setup guide: download → Unity installation → first export → game loading[/url]
+[url=https://github.com/chezhou9413/RimUnity/releases]All releases and matching game runtime[/url]
+
+In Unity 2022.3, open Window → Package Manager → + → Add package from tarball and select the downloaded TGZ. These tools are for mod authors. Players only need the game mod, without the exporter or Unity. This is a preview release; see the supported scope below.
+
+RimUnity is an asset and visual-effects framework for RimWorld 1.7. Mod authors can create particle effects, prefabs, materials, interfaces, models and animations in Unity, export them as readable resources with the companion tools, and load them through the game's Waylith engine.
+
+[b]For players:[/b] this is a dependency for other mods. It does not add races, buildings or weapons on its own. Install a content mod that uses RimUnity to see its effects. Players do not need Unity or the exporter.
+
+[b]For mod authors:[/b] build hierarchies, tune particles, configure materials and assign script fields in the Unity Editor. Use RimUnity's game-side object and component APIs to connect those visuals to buildings, pawns, abilities and interfaces.
+
+[h2]Why use RimUnity?[/h2]
+
+[list]
+[*][b]A familiar authoring workflow.[/b] Use native Unity components and tune assets in the editor, reducing the need to recreate hierarchies and effect parameters in game code.
+[*][b]Automatic dependency collection.[/b] Export nested prefabs and variants together with their materials, textures, meshes, fonts and animations. Use single-prefab export, batch particle export or the asset build manager.
+[*][b]Familiar scripting APIs.[/b] Work with GameObject, Transform, MonoBehaviour, Instantiate, GetComponent, Play, Stop and common coroutines. Adapt type references and recompile while retaining a familiar script structure.
+[*][b]Readable, organized resources.[/b] Prefab, material and animation data use JSON; shaders use GLSL. Each content mod owns its resource directory and loads assets by stable logical paths, making version control and troubleshooting easier.
+[*][b]Materials travel with the assets.[/b] Supported material parameters, textures and shader conversion are handled by the exporter. There is no need to hand-write a separate ShaderDef for every exported material.
+[*][b]Control over glow.[/b] Linear assets can use HDR transparent blending on the map, with layer-filtered Bloom. Content mods can connect Bloom to their own settings.
+[*][b]Open source.[/b] The framework and companion exporter use the MIT license. Read the implementation, modify it and contribute improvements.
+[/list]
+
+[h2]What can you build?[/h2]
+
+[list]
+[*][b]Particles and effects:[/b] looping and burst emission, curves and gradients, texture sheets, sub-emitters, trails, custom data, force fields, and limited collision/trigger support.
+[*][b]Materials and shaders:[/b] common Unlit, transparent and additive materials, plus supported custom vertex/fragment programs for UV animation, masks, dissolves and related effects.
+[*][b]Interfaces:[/b] common UGUI controls, layouts, pointer events, Text, basic TMP SDF text and custom material drawing in IMGUI.
+[*][b]Models and animation:[/b] static/skinned meshes, basic Animator, 1D blending, property animation, animation events, LineRenderer and TrailRenderer.
+[*][b]Scripts and hierarchies:[/b] prefab instances, parent/child nodes, field and event references, Mono lifecycle messages and common coroutines.
+[/list]
+
+[h2]For players: installation[/h2]
+
+[olist]
+[*]Use RimWorld 1.7 on Windows x64.
+[*]Install and enable Harmony, RimUnity and a content mod that requires it.
+[*]Load Harmony before RimUnity, and RimUnity before the content mod. Also follow that mod's other dependency requirements.
+[*]Follow the content mod's instructions to use its effects. Map Bloom is off by default in RimUnity; configure it in mod settings when needed, or use the content mod's own switch.
+[/olist]
+
+[h2]For authors: getting started[/h2]
+
+[olist]
+[*]Download the UPM TGZ above and install it through Add package from tarball in Unity 2022.3 LTS Package Manager. Selected features of Built-in and URP 14 projects are supported.
+[*]Create assets and export them into your content mod using the RimUnity export window or build manager.
+[*]Reference RimUnity.Core.dll and RimUnity.dll, compile your game-side scripts for .NET 10, and declare the RimUnity dependency.
+[*]Load a template with PrefabLoader.Load, then create an instance with RimUnity.Object.Instantiate. Distribute the exported catalog and all dependencies with your content mod.
+[/olist]
+
+The runtime reads RimUnity exports, not original binary Unity AssetBundles. Existing AssetBundle labels can organize export entries, but the assets still need to pass through the exporter.
+
+[h2]Scope and compatibility[/h2]
+
+RimUnity provides a defined set of Unity-style features. It cannot run arbitrary Unity projects or unadapted third-party DLLs. Custom scripts must use game-side types and be recompiled.
+
+Shader Graph, Live2D, Humanoid/IK, complete Unity lighting and the full post-processing stack are not supported. Physics is simplified, and particle Lights illuminate map cells. Native buildings and pawns do not automatically become colliders. Random particle trajectories, some rendering parameters and final appearance can differ from Unity; compare your effects in the game.
+
+[url=https://github.com/chezhou9413/RimUnity/blob/main/Docs/en/Status.md]Full feature support and limitations[/url]
+
+[h2]Source and documentation[/h2]
+
+[url=https://github.com/chezhou9413/RimUnity]GitHub repository[/url]
+[url=https://github.com/chezhou9413/RimUnity/blob/main/Docs/en/QuickStart.md]English quick start[/url]
+[url=https://github.com/chezhou9413/RimUnity/blob/main/Docs/en/ApiQuickStart.md]API integration and asset loading[/url]
+[url=https://github.com/chezhou9413/RimUnity/blob/main/Docs/en/Workflow.md]Authoring, export and publishing workflow[/url]
+[url=https://github.com/chezhou9413/RimUnity/blob/main/README.md]中文文档 / Chinese documentation[/url]
+[url=https://github.com/chezhou9413/RimUnity/issues]Report an issue[/url]
+
+When reporting a problem, include the game/framework versions, the full error log and reproduction steps. For visual issues, include the asset name and comparison screenshots when possible.
+
+[b]Authors: chezhou9413 and keeptpa[/b]
+
+The framework uses the MIT license. Artwork, fonts and third-party assets in content mods retain their own licenses. This is an independent community project, not affiliated with Unity Technologies or Ludeon Studios.

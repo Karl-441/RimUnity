@@ -1,5 +1,7 @@
 # MonoBehaviour 与常用方法
 
+[简体中文](MonoBehaviour.md) | [English](en/MonoBehaviour.md)
+
 游戏侧脚本继承 `RimUnity.MonoBehaviour`，使用 `RimUnity.GameObject`、`Transform` 和数学类型。RimUnity 负责对象树、字段与事件绑定、生命周期和协程；资源与绘制直接调用 Waylith。本文介绍常用 API，支持范围见 [功能说明](Status.md)。
 
 程序集引用、导出和加载入口分别见 [API 快速接入](ApiQuickStart.md)、[工作流](Workflow.md) 和 [资源载入](ResourceLoading.md)。
@@ -113,7 +115,7 @@ for (int i = 0; i < transform.childCount; i++)
 
 `transform.Find("Fire")` 只匹配直接子节点，不会递归搜索任意深度；跨层级写 `"Effects/Fire"`。`GetComponent<T>()` 只查当前对象，子树查询默认不包含未激活对象。查不到节点或单个组件时需要按资源契约处理，不应紧接着无条件访问其成员。
 
-`RimUnity.GameObject.Find(name)`，但它属于全局查找；同名实例无法据此可靠区分。优先从持有的实例根节点查找，或使用 Inspector 引用。常用引用在初始化时缓存，不要每帧搜索整个层级。
+也可使用 `RimUnity.GameObject.Find(name)`，但它属于全局查找；同名实例无法据此可靠区分。优先从持有的实例根节点查找，或使用 Inspector 引用。常用引用在初始化时缓存，不要每帧搜索整个层级。
 
 ## 4. Transform、激活与动态组件
 

@@ -17,7 +17,7 @@ $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $stage = Join-Path $TempRoot ([Guid]::NewGuid().ToString('N'))
 $mod = Join-Path $stage 'RimUnity'
 foreach ($directory in @($Output,$mod,(Join-Path $mod '1.7\Assemblies'))) { [IO.Directory]::CreateDirectory($directory) | Out-Null }
-foreach ($name in @('About','LoadFolders.xml','Docs','ThirdParty','LICENSE')) { Copy-Item -LiteralPath (Join-Path $repo $name) -Destination $mod -Recurse }
+foreach ($name in @('About','LoadFolders.xml','README.md','README.en.md','Docs','ThirdParty','LICENSE')) { Copy-Item -LiteralPath (Join-Path $repo $name) -Destination $mod -Recurse }
 foreach ($name in @('Defs','Shaders')) { Copy-Item -LiteralPath (Join-Path $repo "1.7\$name") -Destination (Join-Path $mod '1.7') -Recurse }
 foreach ($name in $runtimeFiles) { Copy-Item -LiteralPath (Join-Path $AssemblyDirectory $name) -Destination (Join-Path $mod '1.7\Assemblies') }
 #框架只发布运行时和内置 Shader；导出资源由各内容模组自行打包。

@@ -1,5 +1,7 @@
 # 资源载入与目录约定
 
+[简体中文](ResourceLoading.md) | [English](en/ResourceLoading.md)
+
 ## 内容归属与逻辑路径
 
 资源属于使用方模组，而不是 RimUnity 框架。一个内容模组的目录示例：

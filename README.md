@@ -1,8 +1,16 @@
 # RimUnity
 
-在 Unity 制作资源，导出明文 Prefab 与依赖，在 RimWorld 1.7 中加载和使用。
+[简体中文](README.md) | [English](README.en.md)
+
+![RimUnity](Docs/Images/RimUnity-Cover.png)
+
+RimUnity 是面向 RimWorld 1.7 的 Unity 资源导出与运行框架。在 Unity 中制作预制体、粒子、材质、UI 和模型，导出明文资源与依赖，再由游戏的 Waylith 引擎加载和运行。框架提供熟悉的 GameObject、Transform、MonoBehaviour 等接口，让资源制作与模组代码衔接起来。具体功能见[支持范围与限制](Docs/Status.md)。
 
 ## 快速开始
+
+**下载：[Unity 导出工具 0.1.5（含 ShaderTool）](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.5/com.chezhou.rimunity-0.1.5.tgz) · [配套游戏模组与全部版本](https://github.com/chezhou9413/RimUnity/releases)**
+
+只玩模组的玩家安装 Harmony、RimUnity 和对应内容模组即可，不需要 Unity 编辑器。制作资源的作者请先阅读[导出工具安装与第一次导出](Docs/ExporterSetup.md)。
 
 1. 在 RimWorld 中安装并启用 Harmony 和 RimUnity。
 2. 在 Unity 2022.3 的 Package Manager 中选择 **Add package from disk**，安装 `UnityPackage/package.json`，也可以安装发布的 UPM TGZ。支持 Built-in 与 URP 14 的指定功能。
@@ -20,6 +28,7 @@ instance.transform.position = new RimUnity.Vector3(x, y, z);
 ## 使用文档
 
 - [快速开始](Docs/QuickStart.md)
+- [导出工具安装与第一次导出](Docs/ExporterSetup.md)
 - [API 快速接入](Docs/ApiQuickStart.md)
 - [MonoBehaviour 与常用方法](Docs/MonoBehaviour.md)
 - [类型与脚本用法](Docs/Usage.md)
@@ -32,5 +41,7 @@ instance.transform.position = new RimUnity.Vector3(x, y, z);
 - [支持范围与限制](Docs/Status.md)
 
 ## 许可
+
+作者：chezhou9413、keeptpa。
 
 本项目使用 [MIT 许可证](LICENSE)。第三方许可见 [版权声明](ThirdParty/NOTICE.md)。内容模组的美术、字体和其他资源按各自许可证分发。

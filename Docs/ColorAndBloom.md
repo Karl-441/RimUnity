@@ -1,5 +1,7 @@
 # 颜色、透明混合与 Bloom
 
+[简体中文](ColorAndBloom.md) | [English](en/ColorAndBloom.md)
+
 ## 颜色与材质
 
 导出器读取 Unity 工程的 Gamma／Linear 设置，并保留材质颜色、Alpha、纹理、混合模式和绘制状态。制作时将噪声、遮罩等数值贴图设为 Linear，将颜色贴图按实际用途设置为 sRGB。

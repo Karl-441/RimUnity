@@ -1,5 +1,9 @@
 # 快速开始
 
+[简体中文](QuickStart.md) | [English](en/QuickStart.md)
+
+普通玩家只需安装游戏侧前置和内容模组。下面面向模组作者；第一次使用请先看[导出工具安装与第一次导出](ExporterSetup.md)，了解应下载的文件、Package Manager 安装入口及工具路径设置。
+
 1. 构建并安装 RimUnity，在游戏中启用 Harmony 与 RimUnity。
 2. 在 Unity 2022.3 的 Package Manager 中安装 `UnityPackage/package.json` 或发布的 UPM TGZ。
 3. 在自己的 Unity 工程制作 Prefab。目标内容模组应具备有效 `About/About.xml`，并声明 RimUnity 依赖和加载顺序。
