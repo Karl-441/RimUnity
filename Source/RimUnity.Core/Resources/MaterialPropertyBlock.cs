@@ -9,6 +9,17 @@ public sealed class MaterialPropertyBlock : IDrawPropertyProvider
 {
     private readonly Dictionary<int, DrawProperty> values = new();
     private readonly Dictionary<int, ComputeBuffer> buffers = new();
+    //创建空的实例绘制参数。
+    public MaterialPropertyBlock() { }
+
+    //复制参数容器；纹理和缓冲区继续引用同一资源。
+    public MaterialPropertyBlock(MaterialPropertyBlock source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        values = new(source.values);
+        buffers = new(source.buffers);
+    }
+
     public int PropertyCount => values.Count;
     public bool HasStorageBindings => buffers.Count > 0;
     public void Clear() { values.Clear(); buffers.Clear(); }
