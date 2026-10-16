@@ -11,12 +11,14 @@ public sealed class Sprite : Object
     public Vector2 pivot { get; private set; }
     public float pixelsPerUnit { get; private set; }
     public Vector4 border { get; private set; }
+    public SpriteMeshType meshType { get; private set; }
     public Bounds bounds => new(new Vector3((rect.width * .5f - pivot.x) / pixelsPerUnit, (rect.height * .5f - pivot.y) / pixelsPerUnit), new Vector3(rect.width / pixelsPerUnit, rect.height / pixelsPerUnit));
+    //保留网格类型，矩形精灵由渲染端直接生成几何，紧密精灵使用注册的轮廓。
     public static Sprite Create(Texture2D texture, Rect rect, Vector2 pivot, float pixelsPerUnit = 100, uint extrude = 0, SpriteMeshType meshType = SpriteMeshType.FullRect, Vector4 border = default)
     {
         if (texture == null) throw new ArgumentNullException(nameof(texture));
         if (!float.IsFinite(pixelsPerUnit) || pixelsPerUnit <= 0) throw new ArgumentOutOfRangeException(nameof(pixelsPerUnit));
-        return new() { texture = texture, rect = rect, pivot = Vector2.Scale(pivot, rect.size), pixelsPerUnit = pixelsPerUnit, border = border };
+        return new() { texture = texture, rect = rect, pivot = Vector2.Scale(pivot, rect.size), pixelsPerUnit = pixelsPerUnit, border = border, meshType = meshType };
     }
 }
 public enum SpriteMeshType { FullRect, Tight }

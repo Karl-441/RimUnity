@@ -43,7 +43,8 @@ public sealed partial class ParticleSystemRenderer
         {
             var a = points[i - 1]; var b = points[i];
             Vector3 p0 = trailWorldPoints[i - 1], p1 = trailWorldPoints[i];
-            Vector3 side = Vector3.Cross(p1 - p0, forward).normalized;
+            //按相机前向与轨迹方向生成横轴，让三角形正面朝向相机。
+            Vector3 side = Vector3.Cross(forward, p1 - p0).normalized;
             float t0 = (i - 1f) / (points.Count - 1), t1 = i / (float)(points.Count - 1);
             float width0 = module.widthOverTrail.Evaluate(t0) * (ribbon ? a.width : trail.width) * .5f, width1 = module.widthOverTrail.Evaluate(t1) * (ribbon ? b.width : trail.width) * .5f;
             Color c0 = (ribbon ? a.color : trail.color) * module.colorOverTrail.Evaluate(t0) * module.colorOverLifetime.Evaluate(float.IsPositiveInfinity(a.lifetime) ? 0 : 1 - a.remaining / a.lifetime);

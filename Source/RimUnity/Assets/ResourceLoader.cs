@@ -87,8 +87,9 @@ internal static class ResourceLoader
                 result = new U2D.SpriteAtlas(Get<Sprite[]>("sprites"));
                 break;
             case "Sprite":
+                //导出精灵必须使用源几何，缺失轮廓时不能当作动态矩形处理。
                 result = Sprite.Create(Get<Texture2D>("texture"), Get<Rect>("rect"), Get<Vector2>("pivot"),
-                    Get<float>("pixelsPerUnit"), 0, SpriteMeshType.FullRect, Get<Vector4>("border"));
+                    Get<float>("pixelsPerUnit"), 0, SpriteMeshType.Tight, Get<Vector4>("border"));
                 if (fields.ContainsKey("geometryPositions")) UI.SpriteGeometry.Register((Sprite)result, Get<Vector2[]>("geometryPositions"), Get<Vector2[]>("geometryUV"), Get<int[]>("geometryTriangles"));
                 break;
             case "Font":

@@ -74,7 +74,9 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
     {
         if (!enabled || !gameObject.activeInHierarchy) return;
         preparedSpriteTextures.Clear();
-        if (sharedMaterial != null && renderMode != ParticleSystemRenderMode.None && system.count != 0)
+        //零上限只隐藏粒子面片，模拟和下方独立绘制的拖尾继续运行。
+        if (sharedMaterial != null && renderMode != ParticleSystemRenderMode.None && system.count != 0
+            && (renderMode == ParticleSystemRenderMode.Mesh || maxParticleSize > 0))
         {
             ClearMesh(); order.Clear();
             for (int i = 0; i < system.count; i++) order.Add(i);
@@ -159,6 +161,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             x = rotation * Vector3.right; y = rotation * Vector3.up;
         }
         x *= size.x * .5f; y *= size.y * .5f;
+        ClampBillboardSize(center, camera, ref x, ref y);
         streamNormal = -Vector3.Cross(x, y).normalized;
         streamTangent = new Vector4(x.normalized.x, x.normalized.y, x.normalized.z, 1);
         center += x * (pivot.x * 2) + y * (pivot.y * 2);

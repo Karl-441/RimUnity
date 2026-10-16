@@ -1,4 +1,4 @@
-# Embedded runtime integration · 0.1.10
+# Embedded runtime integration · 0.1.11
 
 The embedded package contains the same `RimUnity.Core`, `RimUnity` and `RimUnity.Spine` assemblies and public types as the standalone mod, plus all built-in Defs, GLSL, bilingual settings text and licenses. `RimUnity.Embedded.dll` is a container and bootstrap, not a separate API. It contains no real Unity engine, game assemblies or Harmony.
 
@@ -6,7 +6,7 @@ The filename stays `RimUnity.Embedded.dll`. Its internal container assembly name
 
 ## Download and dependencies
 
-Download the [0.1.10 stable embedded ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/RimUnity.Embedded-0.1.10.zip). Keep `RimUnity.Embedded.dll`, `RimUnity.Embedded.targets` and `References/` together after extraction.
+Download the [0.1.11 stable embedded ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.11/RimUnity.Embedded-0.1.11.zip). Keep `RimUnity.Embedded.dll`, `RimUnity.Embedded.targets` and `References/` together after extraction.
 
 Both integration modes require RimWorld 1.7 and Harmony. Declare `brrainz.harmony` as a dependency in the content mod's About.xml and load after it. Embedded mode does not require a mandatory `Chezhou.RimUnity` dependency. Resource-only mods may simply copy the embedded DLL into an active load folder's `Assemblies`, usually `1.7/Assemblies`. Never copy References there.
 
