@@ -45,6 +45,7 @@ public sealed class Material : Object
             if (value == null) throw new ArgumentNullException(nameof(value));
             if (ReferenceEquals(currentShader, value)) return;
             ReleasePasses(); overridePasses = null; currentShader = value; engineMaterial.Shader = value.EngineShader;
+            BindSceneGrab(engineMaterial);
         }
     }
     public Material(Shader shader)
@@ -52,6 +53,7 @@ public sealed class Material : Object
         currentShader = shader ?? throw new ArgumentNullException(nameof(shader));
         engineMaterial = new(shader.EngineShader);
         SetColor("_Color", Color.white); Created?.Invoke(this);
+        BindSceneGrab(engineMaterial);
     }
     public Material(Material source)
     {
@@ -59,6 +61,21 @@ public sealed class Material : Object
         currentShader = source.shader; engineMaterial = new(source.engineMaterial);
         overridePasses = source.overridePasses;
         shadowCaster = source.shadowCaster;
+        BindSceneGrab(engineMaterial);
+    }
+    //Unity names the sampled texture in GrabPass. Waylith names the capture and
+    //prefixes its property with _Grab, so _GrabTexture becomes _Grab_GrabTexture.
+    //Alias the authored sampler to the canonical texture the host updates; do not
+    //allocate/copy images or depend on a matching global property name.
+    private static void BindSceneGrab(Waylith.Rendering.Material material)
+    {
+        if (material.Shader.SceneGrab is { } grab)
+        {
+            material.SetTexture(grab.TexturePropertyId, grab.Texture);
+            foreach (var slot in material.Shader.MaterialLayout.TextureSlots)
+                if (slot.Kind != MaterialTextureKind.Sampler && slot.PropertyName == grab.Name)
+                    material.SetTexture(slot.PropertyId, grab.Texture);
+        }
     }
     public int renderQueue { get => engineMaterial.RenderQueue; set => engineMaterial.RenderQueue = value; }
     public int passCount => EffectivePasses.Length;
@@ -157,6 +174,7 @@ public sealed class Material : Object
     {
         engineMaterial.CopyPropertiesFrom(source.engineMaterial); engineMaterial.CopyArraysFrom(source.engineMaterial);
         renderQueue = source.renderQueue;
+        BindSceneGrab(engineMaterial);
     }
     //导出材质可以保存独立的 Pass 组合，克隆时共享组合并独立持有参数。
     public void SetPasses(Shader[] shaders)
@@ -180,7 +198,7 @@ public sealed class Material : Object
         }
         if (passVersion != engineMaterial.Version)
         {
-            foreach (var pass in passes) { pass.CopyPropertiesFrom(engineMaterial); pass.CopyArraysFrom(engineMaterial); pass.RenderQueue = renderQueue; pass.WrapModeOverride = engineMaterial.WrapModeOverride; }
+            foreach (var pass in passes) { pass.CopyPropertiesFrom(engineMaterial); pass.CopyArraysFrom(engineMaterial); pass.RenderQueue = renderQueue; pass.WrapModeOverride = engineMaterial.WrapModeOverride; BindSceneGrab(pass); }
             passVersion = engineMaterial.Version;
         }
         return passes[index - 1];

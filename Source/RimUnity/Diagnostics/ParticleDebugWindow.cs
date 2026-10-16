@@ -15,6 +15,10 @@ internal sealed partial class ParticleDebugWindow : Window
     internal static bool Capturing;
     internal sealed record Snapshot(string Name, string Report, DateTime Seen, int NativeMaterialId, int NativeMeshId);
     private static readonly Dictionary<string, Snapshot> snapshots = new();
+    // Debug-window lifetime only; retain IDs, never renderer/material references.
+    private static readonly HashSet<int> hiddenMaterialIds = new();
+    internal static bool IsMaterialHidden(Material material)
+        => DebugSettings.ShowDevGizmos && hiddenMaterialIds.Contains(material.engineMaterial.Id);
     private string filter = "", selected;
     private UnityEngine.Vector2 listScroll, detailScroll;
     private bool paused;
@@ -22,7 +26,7 @@ internal sealed partial class ParticleDebugWindow : Window
     internal ParticleDebugWindow() { doCloseX = true; draggable = true; resizeable = true; absorbInputAroundWindow = false; Capturing = true; snapshots.Clear(); FinalReports.Clear(); }
     [DebugAction("RimUnity", "粒子渲染诊断", allowedGameStates = AllowedGameStates.PlayingOnMap)]
     private static void Open() { if (!Find.WindowStack.IsOpen<ParticleDebugWindow>()) Find.WindowStack.Add(new ParticleDebugWindow()); }
-    public override void PostClose() { base.PostClose(); Capturing = false; snapshots.Clear(); FinalReports.Clear(); }
+    public override void PostClose() { base.PostClose(); Capturing = false; snapshots.Clear(); FinalReports.Clear(); hiddenMaterialIds.Clear(); }
     internal static bool BeginSample(string key)
     {
         if (!Capturing || !Prefs.DevMode) return false;
@@ -42,12 +46,25 @@ internal sealed partial class ParticleDebugWindow : Window
             float y = row + 8;
             filter = Widgets.TextField(new UnityEngine.Rect(0, y, rect.width - 330, row), filter);
             if (Widgets.ButtonText(new UnityEngine.Rect(rect.width - 320, y, 100, row), paused ? "继续采样" : "暂停采样")) { paused = !paused; Capturing = !paused; }
-            if (Widgets.ButtonText(new UnityEngine.Rect(rect.width - 210, y, 100, row), "清空")) { snapshots.Clear(); FinalReports.Clear(); selected = null; }
+            if (Widgets.ButtonText(new UnityEngine.Rect(rect.width - 210, y, 100, row), "清空")) { snapshots.Clear(); FinalReports.Clear(); hiddenMaterialIds.Clear(); selected = null; }
             if (Widgets.ButtonText(new UnityEngine.Rect(rect.width - 100, y, 100, row), "导出报告")) Export();
             y += row + 8;
             if (Widgets.ButtonText(new UnityEngine.Rect(0, y, 130, row), "复制当前")) Copy(false);
             if (Widgets.ButtonText(new UnityEngine.Rect(140, y, 130, row), "复制全部")) Copy(true);
             Widgets.Label(new UnityEngine.Rect(280, y, rect.width - 280, row), "记录数：" + snapshots.Count + " / 256");
+            if (DebugSettings.ShowDevGizmos)
+            {
+                y += row + 8;
+                float buttonWidth = Mathf.Min(180, Mathf.Max(1, (rect.width - 10) / 2));
+                bool hasSelection = selected != null && snapshots.ContainsKey(selected);
+                int materialId = hasSelection ? snapshots[selected].NativeMaterialId : 0;
+                bool hidden = materialId != 0 && hiddenMaterialIds.Contains(materialId);
+                if (Widgets.ButtonText(new UnityEngine.Rect(0, y, buttonWidth, row), hidden ? "恢复所选材质" : "临时隐藏材质") && materialId != 0)
+                {
+                    if (hidden) hiddenMaterialIds.Remove(materialId); else hiddenMaterialIds.Add(materialId);
+                }
+                if (Widgets.ButtonText(new UnityEngine.Rect(buttonWidth + 10, y, buttonWidth, row), "恢复全部")) hiddenMaterialIds.Clear();
+            }
             y += row + 8;
             Widgets.Label(new UnityEngine.Rect(0, y, rect.width, row * 2), "开启后触发特效；每实例每材质最多每 0.5 秒采样，最多 256 项。记录实际提交的 CPU 网格与材质，不能证明 GPU 最终采样结果。");
             y += row * 2 + 8;
@@ -79,7 +96,10 @@ internal sealed partial class ParticleDebugWindow : Window
         }
         finally { Text.Font = font; Text.Anchor = anchor; Text.WordWrap = wrap; GUI.color = color; }
     }
-    private static string Format(Snapshot snapshot) => "最后采样 UTC：" + snapshot.Seen.ToString("O") + "\n\n" + snapshot.Report + "\n\n" + RendererDebugCapture.CompositeState + "\n\n" + (FinalReports.TryGetValue(snapshot.NativeMaterialId + ":" + snapshot.NativeMeshId, out var final) ? final : "最终帧：尚未捕获此材质，请保持采样并触发特效。");
+    private static string Format(Snapshot snapshot) => "运行时：" + (RuntimeInfo.IsStandalone ? "Standalone" : "Embedded")
+        + " / " + RuntimeInfo.Provider + " / " + RuntimeInfo.Version
+        + " / MVID=" + typeof(ParticleDebugWindow).Assembly.ManifestModule.ModuleVersionId
+        + "\n最后采样 UTC：" + snapshot.Seen.ToString("O") + "\n\n" + snapshot.Report + "\n\n" + RendererDebugCapture.CompositeState + "\n\n" + (FinalReports.TryGetValue(snapshot.NativeMaterialId + ":" + snapshot.NativeMeshId, out var final) ? final : "最终帧：尚未捕获此材质，请保持采样并触发特效。");
     private static string AllReports() => string.Join("\n\n----------------\n\n", snapshots.Values.OrderBy(x => x.Name).Select(Format));
     private void Copy(bool all)
     {

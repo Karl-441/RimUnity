@@ -30,11 +30,17 @@ internal sealed class HdrDrawFrame : IDisposable
     }
     private static bool IsMap(FinalDrawItem draw) => draw.PassId == 0 || draw.PassId == MapPass;
 
+    internal static bool ShouldCapture(FinalDrawItem draw, int mask, bool readOnlyDepth)
+        => IsMap(draw) && (mask & (1 << draw.Layer)) != 0
+            // Bloom's separate light buffer must not copy the grabbed background.
+            // Keep refraction in the normal scene, where the host schedules its grab.
+            && (!readOnlyDepth || draw.Binding.Shader.SceneGrab == null);
+
     internal HdrDrawFrame(MeshDrawFrame source, int mask = -1, bool readOnlyDepth = false)
     {
         Frame = Shell(source, MeshDrawFrame.RentList(), MeshDrawFrame.RentList());
         var dynamic = new List<FinalDrawItem>();
-        foreach (var item in source.Draws) if (IsMap(item) && (mask & (1 << item.Layer)) != 0) dynamic.Add(item);
+        foreach (var item in source.Draws) if (ShouldCapture(item, mask, readOnlyDepth)) dynamic.Add(item);
         dynamic.Sort((a, b) => a.SortKey.CompareTo(b.SortKey));
         var persistent = source.PersistentDraws;
         var bindings = new Dictionary<MaterialBinding, MaterialBinding>();
@@ -44,7 +50,7 @@ internal sealed class HdrDrawFrame : IDisposable
             //与宿主合并顺序一致：键相等时先画持久绘制项。
             while (p < persistent.Count || d < dynamic.Count)
             {
-                if (p < persistent.Count && (!IsMap(persistent[p]) || (mask & (1 << persistent[p].Layer)) == 0)) { p++; continue; }
+                if (p < persistent.Count && !ShouldCapture(persistent[p], mask, readOnlyDepth)) { p++; continue; }
                 var item = p < persistent.Count && (d == dynamic.Count || persistent[p].SortKey.CompareTo(dynamic[d].SortKey) <= 0)
                     ? persistent[p++] : dynamic[d++];
                 var original = item.Binding;

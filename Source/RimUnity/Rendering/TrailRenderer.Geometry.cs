@@ -30,6 +30,7 @@ public sealed partial class TrailRenderer
             {
                 Diagnostics.RendererDebugCapture.Capture(this, batch, material, "TrailRenderer", widthMultiplier, colors);
             }
+            if (Diagnostics.ParticleDebugWindow.IsMaterialHidden(material)) continue;
             RimUnity.Graphics.DrawMesh(batch, Matrix4x4.identity, material, gameObject.layer);
         }
     }
@@ -124,7 +125,9 @@ public sealed partial class TrailRenderer
         uv.Add(new Vector2(section.u * textureScale.x, across * textureScale.y)); normals.Add(-section.facing);
         tangents.Add(new Vector4(section.direction.x, section.direction.y, section.direction.z, 1)); return index;
     }
-    private void Triangle(int a, int b, int c) { indices.Add(a); indices.Add(b); indices.Add(c); }
+    // Sections use Cross(direction, facing) for their side. Reverse the winding so
+    // the geometric normal matches -facing and Cull Back materials face the camera.
+    private void Triangle(int a, int b, int c) { indices.Add(a); indices.Add(c); indices.Add(b); }
     private void FillMesh(Mesh mesh)
     {
         mesh.Clear(); mesh.SetVertices(vertices); mesh.SetColors(colors); mesh.SetUVs(0, uv); mesh.SetTriangles(indices, 0);

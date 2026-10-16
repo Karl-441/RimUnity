@@ -48,6 +48,11 @@ internal sealed partial class ParticleDebugWindow
     {
         report.AppendLine("--- " + stage + " ---");
         report.AppendLine("Shader=" + draw.Binding.Shader.Key + "; materialId=" + draw.Binding.MaterialId + "; meshId=" + draw.Mesh.MeshId + "; override=" + draw.HasOverride + "; pass=" + draw.PassId + "; layer=" + draw.Layer);
+        report.AppendLine("绘制队列=" + draw.RenderQueue + "; Shader 默认队列=" + draw.Binding.Shader.DefaultRenderQueue);
+        if (draw.Binding.Shader.SceneGrab is { } grab)
+            report.AppendLine("屏幕抓取=" + grab.Name + "; 抓取队列=" + grab.Queue
+                + "; 尺寸=" + grab.Texture.width + "×" + grab.Texture.height
+                + "; GPU=" + (grab.Texture.GpuResource != null) + "; Bloom 亮部提取=排除折射层");
         var layout = draw.Binding.MaterialLayout;
         foreach (var slot in layout.TextureSlots)
         {
