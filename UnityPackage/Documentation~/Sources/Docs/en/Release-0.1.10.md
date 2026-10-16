@@ -1,4 +1,4 @@
-# 0.1.10 Stable · Changes and validation scope
+# 0.1.10 Stable · Release notes
 
 2026-10-16, targeting RimWorld 1.7.4980 rev60 and .NET 10. This release retains the embedded runtime and Inspector-style settings from 0.1.9 Preview and adds rendering-warmup progress during map loading.
 
@@ -17,18 +17,9 @@ The standalone mod, embedded runtime and Unity exporter all use version 0.1.10, 
 
 An enabled standalone dependency always wins; update the selected runtime to receive this warmup change. Without standalone, the newest compatible embedded package is selected and identical copies still run once. References are compilation-only and must not be copied as extra runtime DLLs. The framework bundles no real Unity engine, game assemblies or Harmony and performs no online update checks or downloads.
 
-## Checks for this release
+## Downloads
 
-- Core, runtime, Spine, Embedded, ShaderTool and Unity exporter source compiled successfully.
-- Warmup batch, cancellation and timeout verification source compiled; these runtime tests were not executed for this release.
-- Static review covered progress reads, render-thread calls, the native loading-window and fade patches, and bilingual text.
-- Package versions, assembly identities, embedded resources and licenses, compilation references, the offline handbook and SHA-256 were checked.
-- Three existing third-party Spine CA2022 warnings and five deprecated exporter particle-enum warnings remain.
-
-Neither RimWorld nor Unity was launched for this release. The new warmup prompt has not been visually verified in-game. Long-running map rendering and all UI scales have not received a full regression pass.
-
-## Earlier validation
-
-Version 0.1.9 Preview passed .NET 10 offline selection/loading checks and actual game startup with three test mods, both with and without standalone. Those checks covered runtime and Def singletons, content ownership and derived-script instances. The 5,002-entry registry overhead check was offline. Temporary test files were removed.
-
-Those are previous-version results and were not rerun for this release; they are not in-game verification of 0.1.10. See the [0.1.9 Preview validation record](Release-0.1.9.md).
+- Players: extract `RimUnity-0.1.10.zip` into the game's `Mods` directory and enable Harmony and RimUnity.
+- Content mod authors: use `RimUnity.Embedded-0.1.10.zip` and follow the [embedded integration guide](EmbeddedRuntime.md).
+- Unity asset authors: install `com.chezhou.rimunity-0.1.10.tgz`.
+- `SHA256SUMS.txt` provides SHA-256 checksums for all three packages.

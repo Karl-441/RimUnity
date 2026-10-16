@@ -65,4 +65,4 @@ RimUnity's original code is MIT licensed. UGUI retains its MIT notice; Spine Run
 
 The bootstrap reuses the game's assembly registry and only scans mods carrying an embedded entry point. It does not recursively traverse unrelated mod folders. Each actual embedded copy still requires validation; standalone selection skips payload bytes. Deferred scripts also require game type-cache refreshes, whose cost depends on the full list's type count.
 
-Compilation and offline loader checks do not establish full in-game rendering behavior. Release notes separately record offline verification and actual startup checks.
+When reporting a loading issue, include the game log and the version, source and provider shown on the Runtime settings page to identify the selected runtime.
