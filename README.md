@@ -8,7 +8,7 @@ RimUnity 是面向 RimWorld 1.7 的 Unity 资源导出与运行框架。在 Unit
 
 ## 快速开始
 
-**0.1.9 Preview：[独立模组 ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/RimUnity-0.1.9-preview.zip) · [内置运行时 ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/RimUnity.Embedded-0.1.9-preview.zip) · [Unity 导出工具 TGZ](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/com.chezhou.rimunity-0.1.9.tgz) · [SHA-256](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/SHA256SUMS.txt)**
+**0.1.10 正式版：[独立模组 ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/RimUnity-0.1.10.zip) · [内置运行时 ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/RimUnity.Embedded-0.1.10.zip) · [Unity 导出工具 TGZ](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/com.chezhou.rimunity-0.1.10.tgz) · [SHA-256](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/SHA256SUMS.txt)**
 
 | 接入方式 | 使用方法 |
 | --- | --- |
@@ -17,7 +17,7 @@ RimUnity 是面向 RimWorld 1.7 的 Unity 资源导出与运行框架。在 Unit
 
 **两种方式均需要 Harmony。** 启用独立 `Chezhou.RimUnity` 时始终优先使用独立版，内置载荷不挂载；独立版不兼容会明确报错。没有独立版时选择满足脚本要求的最新兼容内置版，相同副本只运行一次。`References` 仅用于编译，不能额外复制到模组。没有联网检测或自动更新，支持离线游玩。
 
-RimUnity 基于 Waylith 提供兼容接口，**不包含、也不另行加载真正的 Unity 引擎**。本版通过编译、.NET 10 离线加载检查，以及三个内置测试模组在有/无独立前置时的真实启动验证。地图长期渲染和 UI 目视检查尚未覆盖；详见[验证范围](Docs/zh-CN/Release-0.1.9.md)。
+RimUnity 基于 Waylith 提供兼容接口，**不包含、也不另行加载真正的 Unity 引擎**。0.1.10 为渲染预热增加双语进度提示并分帧执行，通过编译和静态核对；此次提示尚未进行游戏内目视验证。内置选择规则的离线与三个测试模组启动验证完成于 0.1.9 Preview，详见[本版变更与验证范围](Docs/zh-CN/Release-0.1.10.md)。
 
 只玩模组的玩家安装 Harmony、RimUnity 和对应内容模组即可，不需要 Unity 编辑器。制作资源的作者请先阅读[导出工具安装与第一次导出](Docs/zh-CN/ExporterSetup.md)。
 

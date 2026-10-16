@@ -25,7 +25,7 @@ $mod = Join-Path $stage 'RimUnity'
 [IO.Directory]::CreateDirectory($Output) | Out-Null
 & (Join-Path $PSScriptRoot 'Copy-RuntimePackage.ps1') -Destination $mod -AssemblyDirectory $AssemblyDirectory
 #框架只发布运行时和内置 Shader；导出资源由各内容模组自行打包。
-$modZip = Join-Path $Output "RimUnity-$version-preview.zip"
+$modZip = Join-Path $Output "RimUnity-$version.zip"
 Compress-Archive -LiteralPath $mod -DestinationPath $modZip
 $package = Join-Path $stage 'package'
 Copy-Item -LiteralPath (Join-Path $repo 'UnityPackage') -Destination $package -Recurse
@@ -46,7 +46,7 @@ Copy-Item -LiteralPath (Join-Path $repo 'Docs/zh-CN/EmbeddedRuntime.md') -Destin
 Copy-Item -LiteralPath (Join-Path $repo 'Docs/en/EmbeddedRuntime.md') -Destination (Join-Path $embedded 'README.en.md')
 Copy-Item -LiteralPath (Join-Path $repo 'LICENSE') -Destination $embedded
 Copy-Item -LiteralPath (Join-Path $repo 'ThirdParty') -Destination $embedded -Recurse
-$embeddedZip = Join-Path $Output "RimUnity.Embedded-$version-preview.zip"
+$embeddedZip = Join-Path $Output "RimUnity.Embedded-$version.zip"
 Compress-Archive -LiteralPath $embedded -DestinationPath $embeddedZip
 $sums = @($modZip, $embeddedZip, $tgz) | ForEach-Object { (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($_) }
 [IO.File]::WriteAllLines((Join-Path $Output 'SHA256SUMS.txt'), $sums, [Text.UTF8Encoding]::new($false))

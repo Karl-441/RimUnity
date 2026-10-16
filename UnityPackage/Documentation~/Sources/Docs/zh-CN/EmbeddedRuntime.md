@@ -1,4 +1,4 @@
-# 内置运行时接入 · 0.1.9 Preview
+# 内置运行时接入 · 0.1.10
 
 内置包提供与独立前置完全相同的 `RimUnity.Core`、`RimUnity`、`RimUnity.Spine` 类型和程序集身份，连同框架全部 Defs、GLSL、双语设置文字与许可。`RimUnity.Embedded.dll` 是容器和加载入口，不是第二套 API，也不包含真实 Unity 引擎、游戏程序集或 Harmony。
 
@@ -6,7 +6,7 @@
 
 ## 下载与依赖
 
-下载 [0.1.9 Preview 内置 ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/RimUnity.Embedded-0.1.9-preview.zip)。解压后保持 `RimUnity.Embedded.dll`、`RimUnity.Embedded.targets`、`References/` 的相对位置。
+下载 [0.1.10 正式版内置 ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/RimUnity.Embedded-0.1.10.zip)。解压后保持 `RimUnity.Embedded.dll`、`RimUnity.Embedded.targets`、`References/` 的相对位置。
 
 所有接入方式都依赖 RimWorld 1.7 和 Harmony。内容模组的 `About/About.xml` 应声明 `brrainz.harmony` 为依赖并在它之后加载；内置模式无需强制依赖 `Chezhou.RimUnity`。纯资源模组只需将内置 DLL 放到有效加载目录的 `Assemblies` 中，通常是 `1.7/Assemblies`。不要把 References 放进去。
 

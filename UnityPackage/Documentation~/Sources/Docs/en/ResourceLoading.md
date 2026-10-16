@@ -28,6 +28,8 @@ Before the main menu appears, RimUnity reads enabled content catalogs and loads/
 
 Before entering the first map, a loading event waits for the render thread to populate the actual map, HDR and enabled Bloom pipeline caches. It uses the current global keywords, common particle/ribbon layouts and actual exported mesh layouts. Exported meshes enter the existing resource cache at this stage, moving their loading cost into the loading screen. No visible draws are submitted and full-resolution HDR color targets remain lazy.
 
+During warmup, the normal loading background remains visible with a Chinese/English status and processed/total task count; the game's entry fade does not cover this prompt. A loading frame is submitted first, then map pipelines are warmed in batches of at most 16 tasks with an approximately 8 ms frame budget. Screen-effect warmup runs separately. A single driver call cannot be interrupted and may exceed that budget; total loading time is not guaranteed to decrease. A render-target rebuild recreates the pending plan, and a prolonged lack of render frames cancels the remaining work.
+
 Warmup runs once per process and adds no save data. Startup and initial map loading can take longer; in-game measurement is still required. Dynamic material states, later keywords and render-target rebuilds retain normal lazy creation. Failures are reported with lazy loading retained; headless operation skips pipelines and missing render frames do not cause an infinite wait. Logs report completion, elapsed time and actual assembly paths, including embedded frameworks.
 
 ## Public entry points

@@ -8,7 +8,7 @@ RimUnity is a Unity asset exporter and runtime framework for RimWorld 1.7. Creat
 
 ## Quick start
 
-**0.1.9 Preview: [Standalone ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/RimUnity-0.1.9-preview.zip) · [Embedded runtime ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/RimUnity.Embedded-0.1.9-preview.zip) · [Unity exporter TGZ](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/com.chezhou.rimunity-0.1.9.tgz) · [SHA-256](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.9-preview/SHA256SUMS.txt)**
+**0.1.10 Stable: [Standalone ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/RimUnity-0.1.10.zip) · [Embedded runtime ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/RimUnity.Embedded-0.1.10.zip) · [Unity exporter TGZ](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/com.chezhou.rimunity-0.1.10.tgz) · [SHA-256](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.10/SHA256SUMS.txt)**
 
 | Integration | Usage |
 | --- | --- |
@@ -17,7 +17,7 @@ RimUnity is a Unity asset exporter and runtime framework for RimWorld 1.7. Creat
 
 **Both modes require Harmony.** An enabled `Chezhou.RimUnity` always wins; embedded resources are not mounted. An incompatible standalone version reports an error. Otherwise, the newest compatible embedded version satisfying script requirements is selected, and identical copies run once. `References` is for compilation only; never deploy it as runtime DLLs. There are no online checks or automatic updates; offline play is supported.
 
-RimUnity provides compatibility APIs on Waylith and **does not include or load a separate, real Unity engine**. This preview passed compilation, .NET 10 offline checks and actual game startup with three embedded test mods, with and without standalone. Long-running map rendering and visual UI checks remain unverified. See [validation scope](Docs/en/Release-0.1.9.md).
+RimUnity provides compatibility APIs on Waylith and **does not include or load a separate, real Unity engine**. Version 0.1.10 adds bilingual progress and frame batches for rendering warmup, checked by compilation and static review; the new prompt has not been visually verified in-game. Offline runtime-selection checks and startup with three embedded test mods were completed for 0.1.9 Preview. See [changes and validation scope](Docs/en/Release-0.1.10.md).
 
 Players only need Harmony, RimUnity and the relevant content mod; the Unity Editor is not required. Asset authors should start with [installing the exporter and exporting a first prefab](Docs/en/ExporterSetup.md).
 
