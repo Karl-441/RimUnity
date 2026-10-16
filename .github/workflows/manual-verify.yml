@@ -1,0 +1,79 @@
+# 第二层 CI：需要游戏安装（RimWorld 1.7 + Harmony）与 .NET 10 SDK，只能跑在自托管 runner 上。
+# 触发方式是手动 workflow_dispatch：runner 没注册时，tag/push 触发只会把运行挂在队列里。
+#
+# 一次性准备（在自托管机器上）：
+#   1. 注册 runner 时打上标签：self-hosted, windows, rimworld-1.7
+#   2. 仓库 Settings → Secrets and variables → Actions → Variables 配两个仓库变量：
+#        RIMWORLD_DIR  例：<Steam 库目录>\steamapps\common\RimWorld
+#        HARMONY_PATH  例：<创意工坊目录>\content\294100\2009463077\1.7\Assemblies\0Harmony.dll
+#   3. 装 .NET 10 SDK（Source/Directory.Build.props 的 TargetFramework 是 net10.0，只有 .NET 8 SDK 会 NETSDK1045）
+#
+# 未接进来的：Tools/Test-EmbeddedInGame.ps1——它需要桌面会话、会临时移动真实的 Mods/RimUnity，
+# 而且它的 -FixtureRoot 要手工从上一步 Verify-Embedded.ps1 的输出里取；这一层只跑离线验证链。
+name: manual-verify
+
+on:
+  workflow_dispatch:
+    inputs:
+      run-pack:
+        description: 额外执行 Tools/Pack.ps1 打出发布产物
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 构建 + 离线验证
+    runs-on: [self-hosted, windows, rimworld-1.7]
+    env:
+      RIMWORLD_DIR: ${{ vars.RIMWORLD_DIR }}
+      HARMONY_PATH: ${{ vars.HARMONY_PATH }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境自检
+        shell: pwsh
+        run: |
+          foreach ($name in 'RIMWORLD_DIR', 'HARMONY_PATH') {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if (-not $value) { throw "仓库变量 $name 没有配（Settings → Variables）" }
+            if (-not (Test-Path -LiteralPath $value)) { throw "$name 指向的路径不存在：$value" }
+          }
+          dotnet --version
+          dotnet --list-sdks
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Build.ps1 内部会经 Source/RimUnity.Spine/RimUnity.Spine.csproj 的 BuildEmbeddedRuntime 目标
+      # 顺带构建内置运行时，所以这里不需要单独调 Tools/Build-Embedded.ps1。
+      - name: 编译
+        shell: pwsh
+        run: ./Tools/Build.ps1
+
+      - name: 着色器与导出校验
+        shell: pwsh
+        run: ./Tools/Verify.ps1
+
+      - name: 内置运行时离线验证（7 个场景 + 不兼容前置 + 容器冲突变体）
+        shell: pwsh
+        run: ./Tools/Verify-Embedded.ps1 -GameRoot $env:RIMWORLD_DIR -HarmonyPath $env:HARMONY_PATH
+
+      - name: 打包发布产物
+        if: inputs.run-pack
+        shell: pwsh
+        run: ./Tools/Pack.ps1
+
+      # 编译会改写两个被跟踪的二进制（1.7/Assemblies/RimUnity.dll 与 RimUnity.Core.dll，
+      # .gitignore 特意没忽略它们），这里还原并断言工作区只剩预期的改动。
+      - name: 还原被构建改写的被跟踪文件，并检查工作区
+        if: always()
+        shell: pwsh
+        run: |
+          git checkout -- 1.7/Assemblies/RimUnity.dll 1.7/Assemblies/RimUnity.Core.dll
+          $dirty = git status --porcelain
+          if ($dirty) { Write-Host $dirty; throw '工作区仍有改动：构建过程往仓库里写了不该写的东西' }
+          Write-Host '工作区干净。'

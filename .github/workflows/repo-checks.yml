@@ -1,0 +1,50 @@
+# 第一层 CI：托管 runner 上就能跑，不需要游戏安装、不需要 .NET SDK。
+# 内容 = Tools/Verify-Static.ps1：离线文档镜像、版本号一致性、脚本 UTF-8 BOM、
+# 盘符绝对路径、XML/JSON 解析、冲突标记、提交范围检查。
+#
+# 已知缺口允许清单在 Tools/Verify-Static.ps1 的 $KnownDebt 里：那些位置只提示、不判失败；
+# 修完删条目后，对应规则立刻变成硬失败。
+name: repo-checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: 静态与一致性检查
+    runs-on: windows-latest
+    steps:
+      # 先关掉行尾自动转换：Verify-Static.ps1 里的文档镜像检查按文件字节比对，
+      # 必须保证 CI 拿到的就是仓库里的字节，否则同一份提交在不同机器上结果不同。
+      - name: 关闭行尾自动转换
+        shell: pwsh
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 提交范围检查需要 PR base 这个提交
+
+      - name: 静态检查（PowerShell 7）
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue
+          ./Tools/Verify-Static.ps1
+
+      # 同一份规则要在 Windows PowerShell 5.1 上也跑一遍：仓库里的 .ps1 同时被 5.1 调用，
+      # 而 5.1 在非 UTF-8 代码页下对缺 BOM 的 UTF-8 中文脚本会乱码甚至解析失败。
+      - name: 静态检查（Windows PowerShell 5.1）
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+          ./Tools/Verify-Static.ps1
+
+      - name: 提交范围检查（仅 PR）
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: ./Tools/Verify-Static.ps1 -BaseRevision "${{ github.event.pull_request.base.sha }}"
