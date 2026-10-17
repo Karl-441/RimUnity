@@ -61,6 +61,9 @@ try {
     $caught = $false
     try { & (Join-Path $tools 'Pack.ps1') -Output $output } catch { $caught = $_.Exception.Message -eq 'stale-mirror' }
     Assert ($caught -and -not (Test-Path -LiteralPath $output)) 'Stale documentation must fail without regenerating it.'
+    # The expected failure above leaves LASTEXITCODE=1. Actions propagates it even
+    # when all assertions pass; clear it only after the complete suite succeeds.
+    $global:LASTEXITCODE = 0
     Write-Output 'PASS: build/verify ordering, SkipBuild, SkipEmbedded, failure propagation, package preflight and read-only mirror check.'
 } finally {
     # Leave the small fixture for inspection; no recursive deletion of computed paths.
