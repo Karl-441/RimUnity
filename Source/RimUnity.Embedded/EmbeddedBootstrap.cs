@@ -11,21 +11,30 @@ namespace RimUnity.Embedded;
 public sealed class EmbeddedBootstrap : Mod
 {
     private const string Installed = "RimUnity.Embedded.Installed";
+    //进程级入口注册状态；与旧包分开，允许在 XML 前接管旧补丁。
+    private const string DeferredInstalled = "RimUnity.Embedded.DeferredInstalled";
     private const string Finished = "RimUnity.Embedded.Finished";
 
     //首次构造时原 CreateModClasses 已在执行，故拦截紧接着的 XML 读取入口。
     public EmbeddedBootstrap(ModContentPack content) : base(content)
     {
-        if (AppDomain.CurrentDomain.GetData(Installed) != null) return;
+        if (AppDomain.CurrentDomain.GetData(DeferredInstalled) != null) return;
+        new Harmony("Chezhou.RimUnity.Embedded.Deferred").Patch(AccessTools.Method(typeof(LoadedModManager), "LoadModXML"),
+            prefix: new HarmonyMethod(typeof(EmbeddedBootstrap), nameof(Prepare))
+            {
+                priority = Priority.First,
+                before = new[] { "Chezhou.RimUnity.Embedded" }
+            });
+        AppDomain.CurrentDomain.SetData(DeferredInstalled, true);
+        //新入口先构造时阻止旧包安装；旧入口先构造时由上面的 before 保证接管。
         AppDomain.CurrentDomain.SetData(Installed, true);
-        new Harmony("Chezhou.RimUnity.Embedded").Patch(AccessTools.Method(typeof(LoadedModManager), "LoadModXML"),
-            prefix: new HarmonyMethod(typeof(EmbeddedBootstrap), nameof(Prepare)));
     }
 
     //在 Def 解析前完成运行时、资源和内容脚本的唯一一次装载。
     private static void Prepare()
     {
         if (AppDomain.CurrentDomain.GetData(Finished) != null) return;
+        //沿用旧包的完成标记，在任何回调前登记，使旧 Prefix 和重入均跳过。
         AppDomain.CurrentDomain.SetData(Finished, true);
         try { RuntimeSelection.Initialize(); }
         catch (Exception error)

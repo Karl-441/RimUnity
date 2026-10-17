@@ -1,5 +1,6 @@
-param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$FixtureRoot)
+param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$FixtureRoot, [string]$LegacyCarrier = '')
 $ErrorActionPreference = 'Stop'
+if ($LegacyCarrier -and !(Test-Path -LiteralPath $LegacyCarrier -PathType Leaf)) { throw '历史加载器文件不存在。' }
 if (Get-Process RimWorld,RimWorldWin64 -ErrorAction SilentlyContinue) { throw '游戏正在运行；请结束当前会话后再执行测试。' }
 $repo = Split-Path $PSScriptRoot -Parent
 $run = Join-Path ([IO.Path]::GetTempPath()) ('RimUnity/GameVerification-' + [Guid]::NewGuid().ToString('N'))
@@ -34,7 +35,8 @@ try {
         [IO.File]::WriteAllText((Join-Path $target 'About/About.xml'), "<ModMetaData><name>RimUnity Embedded Test $letter</name><author>RimUnity verification</author><packageId>test.$id</packageId><supportedVersions><li>1.7</li></supportedVersions><description>Temporary embedded runtime verification fixture.</description><modDependencies><li><packageId>brrainz.harmony</packageId><displayName>Harmony</displayName></li></modDependencies></ModMetaData>", [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $target 'LoadFolders.xml'), '<loadFolders><v1.7><li>1.7</li></v1.7></loadFolders>', [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $target '1.7/Defs/Marker.xml'), "<Defs><Fixture.MarkerDef><defName>EmbeddedTest_$id</defName></Fixture.MarkerDef></Defs>", [Text.UTF8Encoding]::new($false))
-        Copy-Item -LiteralPath (Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll') -Destination (Join-Path $target '1.7/Assemblies') -Force
+        $carrier = if ($letter -eq 'A' -and $LegacyCarrier) { $LegacyCarrier } else { Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll' }
+        Copy-Item -LiteralPath $carrier -Destination (Join-Path $target '1.7/Assemblies/RimUnity.Embedded.dll') -Force
     }
     foreach ($mode in @('standalone','embedded')) {
         $save = Join-Path $run $mode
@@ -51,15 +53,18 @@ try {
         $reportPath = Join-Path $save 'RimUnity-embedded-report.json'
         if (!(Test-Path -LiteralPath $reportPath)) { throw "游戏未生成测试报告：$save" }
         $report = Get-Content -LiteralPath $reportPath -Encoding UTF8 -Raw | ConvertFrom-Json
-        if (!$report.passed -or $report.source -ne $mode -or $report.copies -ne 3) { throw "游戏测试未通过：$reportPath" }
-        if ($mode -eq 'standalone' -and (Test-Path -LiteralPath (Join-Path $save 'RimUnity/Embedded'))) { throw '独立模式不应创建内置缓存。' }
+        if (!$report.passed -or $report.source -ne $mode -or $report.copies -ne $(if ($mode -eq 'standalone') { 4 } else { 3 })) { throw "游戏测试未通过：$reportPath" }
+        if (!(Test-Path -LiteralPath (Join-Path $save 'RimUnity/Embedded'))) { throw '选中的延迟载荷应创建资源缓存。' }
         Write-Output "PASS 游戏启动：$mode；3 个内置测试模组；报告=$reportPath"
     }
 } finally {
     if ($process -and !$process.HasExited) { Stop-Process -Id $process.Id -Force }
     #只清理本次预先核对过、由本脚本创建的路径，并恢复原前置。
-    foreach ($path in $testMods) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force } }
-    if ($liveCreated -and (Test-Path -LiteralPath $live)) { Remove-Item -LiteralPath $live -Recurse -Force }
-    if ($movedOriginal) { Move-Item -LiteralPath $backup -Destination $live }
+    try {
+        foreach ($path in $testMods) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force } }
+    } finally {
+        if ($liveCreated -and (Test-Path -LiteralPath $live)) { Remove-Item -LiteralPath $live -Recurse -Force }
+        if ($movedOriginal) { Move-Item -LiteralPath $backup -Destination $live }
+    }
     Write-Output "原模组已恢复，测试资料保留：$run"
 }

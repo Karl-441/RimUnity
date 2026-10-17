@@ -4,7 +4,8 @@
     <AssemblyName>RimUnity.Spine</AssemblyName>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../RimUnity/RimUnity.csproj" /></ItemGroup>
-  <Target Name="BuildEmbeddedRuntime" AfterTargets="Build" Condition="'$(SkipEmbedded)' != 'true'">
+  <!--独立版同样需要延迟载荷，SkipEmbedded 不再跳过此必需构建。-->
+  <Target Name="BuildEmbeddedRuntime" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec Command="pwsh -NoProfile -File &quot;$(MSBuildProjectDirectory)/../../Tools/Build-Embedded.ps1&quot; -GameRoot &quot;$(RimWorldDir)&quot; -HarmonyPath &quot;$(HarmonyPath)&quot;" StdOutEncoding="utf-8" StdErrEncoding="utf-8" />
   </Target>
 </Project>

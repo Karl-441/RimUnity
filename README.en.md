@@ -8,14 +8,14 @@ RimUnity is a Unity asset exporter and runtime framework for RimWorld 1.7. Creat
 
 ## Quick start
 
-**0.1.11 Stable: [Standalone ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.11/RimUnity-0.1.11.zip) · [Embedded runtime ZIP](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.11/RimUnity.Embedded-0.1.11.zip) · [Unity exporter TGZ](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.11/com.chezhou.rimunity-0.1.11.tgz) · [SHA-256](https://github.com/chezhou9413/RimUnity/releases/download/v0.1.11/SHA256SUMS.txt)**
+**Source version: 0.1.12. Download published packages from [Releases](https://github.com/chezhou9413/RimUnity/releases). Build the source to use the loader changes before they are published.**
 
 | Integration | Usage |
 | --- | --- |
 | Standalone dependency | Enable Harmony, RimUnity and content mods. All content shares the standalone runtime. |
 | Embedded runtime | Resource-only mods carry `RimUnity.Embedded.dll`. C# content mods must publish deferred scripts through the included `.targets`. See the [integration guide](Docs/en/EmbeddedRuntime.md). |
 
-**Both modes require Harmony.** An enabled `Chezhou.RimUnity` always wins; embedded resources are not mounted. An incompatible standalone version reports an error. Otherwise, the newest compatible embedded version satisfying script requirements is selected, and identical copies run once. `References` is for compilation only; never deploy it as runtime DLLs. There are no online checks or automatic updates; offline play is supported.
+**Both modes require Harmony.** Since 0.1.12, standalone and embedded payloads compete together; the highest compatible version satisfying content requirements wins. Identical versions and payloads prefer standalone, and only one runtime loads. Legacy standalone packages must be updated to participate. References are compile-only. Selection works offline without automatic updates.
 
 RimUnity provides compatibility APIs on Waylith and **does not include or load a separate, real Unity engine**. Version 0.1.11 supports particle size limits, corrects trail facing and provides rectangular geometry for dynamic FullRect sprites. See the [release notes](Docs/en/Release-0.1.11.md).
 

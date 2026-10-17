@@ -30,7 +30,7 @@
     "category": "原文·English"
   },
   {
-    "title": "Embedded runtime integration · 0.1.11 · Docs/en/EmbeddedRuntime.md",
+    "title": "Embedded runtime integration · 0.1.12 · Docs/en/EmbeddedRuntime.md",
     "source": "Docs/en/EmbeddedRuntime.md",
     "file": "Sources/Docs/en/EmbeddedRuntime.md",
     "category": "原文·English"
@@ -162,7 +162,7 @@
     "category": "原文·中文"
   },
   {
-    "title": "内置运行时接入 · 0.1.11 · Docs/zh-CN/EmbeddedRuntime.md",
+    "title": "内置运行时接入 · 0.1.12 · Docs/zh-CN/EmbeddedRuntime.md",
     "source": "Docs/zh-CN/EmbeddedRuntime.md",
     "file": "Sources/Docs/zh-CN/EmbeddedRuntime.md",
     "category": "原文·中文"

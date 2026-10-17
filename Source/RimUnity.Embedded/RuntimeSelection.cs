@@ -7,16 +7,15 @@ using Verse;
 
 namespace RimUnity.Embedded;
 
-//独立前置优先；内置载荷只在没有前置时参与版本选择。
+//所有启用入口完成扫描后统一选版；独立包与内容包只提供延迟载荷。
 internal static class RuntimeSelection
 {
     private static readonly string[] Names = { "RimUnity.Core", "RimUnity", "RimUnity.Spine" };
+    private static bool IsStandalone(ModContentPack mod) => string.Equals(mod.PackageId, "Chezhou.RimUnity", StringComparison.OrdinalIgnoreCase);
 
-    //仅遍历启用模组的有效目录，忽略未启用及条件禁用的内置包。
     internal static void Initialize()
     {
         var mods = LoadedModManager.RunningModsListForReading;
-        //原版已完成 DLL 扫描，直接复用登记结果；不遍历无内置入口的模组目录。
         var participants = mods.Where(m => m.assemblies.loadedAssemblies.Any(a =>
             a.GetName().Name.StartsWith("RimUnity.Embedded.", StringComparison.Ordinal))).ToArray();
         var content = new DeferredContent(participants);
@@ -30,23 +29,27 @@ internal static class RuntimeSelection
             foreach (string file in Directory.GetFiles(directory, "RimUnity.Embedded.dll", SearchOption.AllDirectories))
                 if (paths.Add(file)) copies.Add((file, mod));
         }
-        var standalone = mods.SingleOrDefault(m => string.Equals(m.PackageId, "Chezhou.RimUnity", StringComparison.OrdinalIgnoreCase));
         Assembly runtime;
         string root, provider, hash = "";
-        if (standalone != null)
+        bool standalone;
+        bool deferred;
+        var legacy = mods.SingleOrDefault(m => IsStandalone(m) && m.assemblies.loadedAssemblies.Any(a => a.GetName().Name == "RimUnity"));
+        if (legacy != null)
         {
-            runtime = standalone.assemblies.loadedAssemblies.Single(a => a.GetName().Name == "RimUnity");
+            //旧发行包已经进入 CLR，无法卸载。保留兼容旧版，但明确拒绝不兼容旧版。
+            runtime = legacy.assemblies.loadedAssemblies.Single(a => a.GetName().Name == "RimUnity");
             string protocol = runtime.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "RimUnityProtocol")?.Value;
             var version = Version.Parse(runtime.GetCustomAttribute<AssemblyFileVersionAttribute>().Version);
             if (protocol != "1" || version < content.Minimum)
-                throw new InvalidOperationException($"独立 RimUnity 版本不兼容，必须升级前置；不会改用内置版。/ Update standalone RimUnity; embedded fallback is disabled. Required: {content.Minimum}, installed: {version}");
-            root = Path.Combine(standalone.RootDir, "1.7");
-            provider = standalone.Name;
-            VerifyLoadedRuntime(standalone.assemblies.loadedAssemblies);
+                throw new InvalidOperationException($"旧式独立 RimUnity 已提前加载，请升级为延迟加载版或停用旧包。/ Update standalone RimUnity to the deferred loader or disable it. Required: {content.Minimum}, installed: {version}");
+            root = Path.Combine(legacy.RootDir, "1.7");
+            provider = legacy.Name;
+            standalone = true;
+            deferred = false;
+            VerifyLoadedRuntime(legacy.assemblies.loadedAssemblies);
         }
         else
         {
-            //副本逐个校验，但相同载荷只保留一份字节，避免副本数放大常驻内存。
             var unique = new Dictionary<string, RuntimePayload>(StringComparer.Ordinal);
             var payloads = new List<(RuntimePayload Payload, ModContentPack Owner)>();
             foreach (var copy in copies)
@@ -57,26 +60,30 @@ internal static class RuntimeSelection
             }
             foreach (var group in payloads.GroupBy(c => c.Payload.Version))
                 if (group.Select(c => c.Payload.Hash).Distinct().Count() != 1)
-                    throw new InvalidDataException("相同版本内置包载荷冲突 / Conflicting embedded payloads: " + group.Key);
+                    throw new InvalidDataException("相同版本运行库载荷冲突 / Conflicting embedded payloads: " + group.Key);
             var compatible = payloads.Where(c => c.Payload.Protocol == 1 && c.Payload.Version >= content.Minimum)
-                .OrderByDescending(c => c.Payload.Version).ThenBy(c => c.Owner.PackageId, StringComparer.Ordinal).ToArray();
-            if (compatible.Length == 0) throw new InvalidOperationException("没有兼容内置包 / No compatible embedded runtime: " + content.Minimum);
+                .OrderByDescending(c => c.Payload.Version).ThenByDescending(c => IsStandalone(c.Owner))
+                .ThenBy(c => c.Owner.PackageId, StringComparer.Ordinal).ToArray();
+            if (compatible.Length == 0) throw new InvalidOperationException("没有兼容运行库 / No compatible embedded runtime: " + content.Minimum);
             var selected = compatible[0];
             if (AppDomain.CurrentDomain.GetAssemblies().Any(a => Names.Contains(a.GetName().Name)))
                 throw new InvalidOperationException("检测到提前加载的 RimUnity DLL，请勿将 References 放入模组。/ Runtime DLLs loaded early; do not deploy References.");
             root = selected.Payload.Extract(Path.Combine(GenFilePaths.SaveDataFolderPath, "RimUnity", "Embedded"));
             hash = selected.Payload.Hash;
             provider = selected.Owner.Name;
+            standalone = IsStandalone(selected.Owner);
+            deferred = true;
             foreach (string name in Names)
                 selected.Owner.assemblies.loadedAssemblies.Add(Assembly.LoadFrom(Path.Combine(root, "Assemblies", name + ".dll")));
             runtime = selected.Owner.assemblies.loadedAssemblies.Single(a => a.GetName().Name == "RimUnity");
             selected.Owner.foldersToLoadDescendingOrder.Add(root);
             UnityStubs.ContentPacks.MountLoadFolder(root);
             ShaderDefRegistry.RegisterShaderDirectories();
+            VerifyLoadedRuntime(selected.Owner.assemblies.loadedAssemblies);
         }
         runtime.GetType("RimUnity.RuntimeInfo", true).GetMethod("Configure").Invoke(null,
-            new object[] { root, standalone != null, provider, copies.Count, hash });
-        if (standalone == null)
+            new object[] { root, standalone, provider, copies.Count, hash });
+        if (deferred)
         {
             GenTypes.ClearCache();
             LoadedModManager.CreateModClasses();
@@ -89,10 +96,9 @@ internal static class RuntimeSelection
             GenTypes.ClearCache();
             LoadedModManager.CreateModClasses();
         }
-        Log.Message($"[RimUnity] {(standalone != null ? "Standalone" : "Embedded")} provider: {provider}; embedded copies: {copies.Count}; payload: {hash}");
+        Log.Message($"[RimUnity] {(standalone ? "Standalone" : "Embedded")} provider: {provider}; version: {runtime.GetCustomAttribute<AssemblyFileVersionAttribute>().Version}; candidates: {copies.Count}; payload: {hash}");
     }
 
-    //前置必须实际拥有全套程序集，不能与其他模组的散装引用混用。
     private static void VerifyLoadedRuntime(IEnumerable<Assembly> owned)
     {
         foreach (string name in Names)

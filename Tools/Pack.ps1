@@ -24,7 +24,7 @@ foreach ($name in $toolFiles) {
 $embeddedSource = Join-Path $repo 'artifacts/Embedded'
 $embeddedFiles = @('RimUnity.Embedded.dll', 'RimUnity.Embedded.targets', 'References/RimUnity.Core.dll', 'References/RimUnity.dll', 'References/RimUnity.Spine.dll')
 foreach ($name in $embeddedFiles) {
-    if (!(Test-Path -LiteralPath (Join-Path $embeddedSource $name) -PathType Leaf)) { throw "缺少内置接入包产物：$name；请运行 Tools/Build.ps1（不要使用 -SkipEmbedded）。" }
+    if (!(Test-Path -LiteralPath (Join-Path $embeddedSource $name) -PathType Leaf)) { throw "缺少内置接入包产物：$name；请运行 Tools/Build.ps1。" }
 }
 $version = (Get-Content -LiteralPath (Join-Path $repo 'UnityPackage\package.json') -Encoding UTF8 -Raw | ConvertFrom-Json).version
 $stage = Join-Path $TempRoot ([Guid]::NewGuid().ToString('N'))

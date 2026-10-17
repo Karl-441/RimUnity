@@ -21,3 +21,5 @@ UnityPackage/Tools~/
 
 Tools/PublishingTests/obj/
 Tools/PublishingTests/bin/
+
+Bootstrap/Assemblies/*.dll

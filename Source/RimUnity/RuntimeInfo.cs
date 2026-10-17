@@ -24,5 +24,5 @@ public static class RuntimeInfo
     }
 
     //独立运行时直接从自己的内容目录定位许可文件。
-    internal static string LicenseRoot => IsStandalone ? Directory.GetParent(ResourceRoot).FullName : ResourceRoot;
+    internal static string LicenseRoot => File.Exists(Path.Combine(ResourceRoot, "LICENSE")) ? ResourceRoot : Directory.GetParent(ResourceRoot).FullName;
 }

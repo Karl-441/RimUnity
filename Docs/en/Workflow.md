@@ -19,7 +19,7 @@ $env:HARMONY_PATH = 'C:/Mods/Harmony/1.7/Assemblies/0Harmony.dll'
 
 Use PowerShell 7 and the .NET 10 SDK. The entry points have separate responsibilities:
 
-- `Build.ps1`: build Core, Runtime, Spine, the embedded integration package and ShaderTool. `-SkipEmbedded` builds only the runtime and tool; this is not a complete packaging build.
+- `Build.ps1`: build Core, Runtime, Spine, the embedded integration package and ShaderTool. `-SkipEmbedded` remains accepted for CLI compatibility; standalone also requires the deferred payload, so it is still built.
 - `Verify.ps1`: build once by default, then validate shaders. `-SkipBuild` checks existing outputs; `-Embedded` adds offline embedded runtime tests; `-DataRoot` adds prefab inspection. With `-SkipBuild`, embedded tests still compile temporary fixtures and test programs, but do not rebuild the release runtime or ShaderTool.
 - `Pack.ps1`: validate existing runtime, tool, embedded package and documentation mirror, then create release archives. It neither builds nor updates documentation. Run Build/Verify for the current source before packaging; file existence does not establish freshness.
 - `Deploy.ps1`: explicitly deploy the standalone mod to the game with a backup. Build, Verify and Pack do not call it.
