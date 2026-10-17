@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$HarmonyPath)
+﻿param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$HarmonyPath)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $repo = Split-Path $PSScriptRoot -Parent
@@ -53,7 +53,3 @@ foreach ($name in @('RimUnity.Core.dll','RimUnity.dll','RimUnity.Spine.dll')) {
     Copy-Item -LiteralPath (Join-Path $repo "1.7/Assemblies/$name") -Destination $references -Force
 }
 Write-Output "内置运行时：$output"
-#独立包同样只提前加载入口；开发目录的运行时 DLL 不在 LoadFolders 中。
-$bootstrap = Join-Path $repo 'Bootstrap/Assemblies'
-[IO.Directory]::CreateDirectory($bootstrap) | Out-Null
-Copy-Item -LiteralPath (Join-Path $output 'RimUnity.Embedded.dll') -Destination $bootstrap -Force

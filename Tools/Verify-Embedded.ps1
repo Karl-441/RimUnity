@@ -11,10 +11,10 @@ foreach ($name in @('A','B')) {
 if ($LASTEXITCODE -ne 0) { throw '内容程序集接入构建失败。' }
 & dotnet build (Join-Path $PSScriptRoot 'EmbeddedTests/EmbeddedTests.csproj') -c Release --nologo "-p:RimWorldDir=$GameRoot" "-p:HarmonyPath=$HarmonyPath"
 if ($LASTEXITCODE -ne 0) { throw '离线验证程序编译失败。' }
-$standaloneDir = Join-Path $fixtures 'Standalone/Bootstrap/Assemblies'
-[IO.Directory]::CreateDirectory($standaloneDir) | Out-Null
-Copy-Item -LiteralPath (Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll') -Destination $standaloneDir
-foreach ($scenario in @('standalone-only','single','duplicates','reverse','standalone-first','standalone-middle','standalone-last','scale')) {
+& (Join-Path $PSScriptRoot 'Copy-RuntimePackage.ps1') -Destination (Join-Path $fixtures 'Standalone')
+& dotnet build (Join-Path $PSScriptRoot 'EmbeddedTests/Fixtures/Ordinary/Ordinary.csproj') -c Release --nologo "-p:RimWorldDir=$GameRoot" "-p:FixtureRoot=$fixtures" "-p:RuntimeDirectory=$repo/1.7/Assemblies"
+if ($LASTEXITCODE -ne 0) { throw '普通 DLL 兼容夹具编译失败。' }
+foreach ($scenario in @('ordinary-standalone','ordinary-standalone-only','standalone-only','single','duplicates','reverse','standalone-first','standalone-middle','standalone-last','scale')) {
     & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures $scenario
     if ($LASTEXITCODE -ne 0) { throw "离线验证失败：$scenario；夹具目录：$fixtures" }
 }
@@ -68,19 +68,24 @@ $requiredVersion = [Version]::new($standaloneVersion.Major, $standaloneVersion.M
 if ($LASTEXITCODE -ne 0) { throw '不兼容独立前置验证失败。' }
 [IO.File]::WriteAllText($manifest, $originalManifest, [Text.UTF8Encoding]::new($false))
 #测试容器只改变归档元数据或许可字节；实际运行时仍使用本次编译的 DLL。
-foreach ($variant in @('older','conflict')) {
+foreach ($variant in @('older','newer','conflict')) {
     $variantRoot = Join-Path $fixtures $variant
     [IO.Directory]::CreateDirectory($variantRoot) | Out-Null
     $variantZip = Join-Path $variantRoot 'payload.zip'
     Copy-Item -LiteralPath (Join-Path $repo 'artifacts/Embedded/payload.zip') -Destination $variantZip
     $zip = [IO.Compression.ZipFile]::Open($variantZip, [IO.Compression.ZipArchiveMode]::Update)
     try {
-        $entry = $zip.GetEntry($(if ($variant -eq 'older') { 'runtime.json' } else { 'LICENSE' }))
+        $entry = $zip.GetEntry($(if ($variant -ne 'conflict') { 'runtime.json' } else { 'LICENSE' }))
         $name = $entry.FullName
         $reader = [IO.StreamReader]::new($entry.Open())
         try { $value = $reader.ReadToEnd() } finally { $reader.Dispose() }
         $entry.Delete()
-        if ($variant -eq 'older') { $value = '{"protocol":1,"version":"0.1.8"}' } else { $value += "`n" }
+        if ($variant -eq 'older') { $value = '{"protocol":1,"version":"0.1.8"}' }
+        elseif ($variant -eq 'newer') {
+            $current = [version]($value | ConvertFrom-Json).version
+            $next = [version]::new($current.Major, $current.Minor, $current.Build + 1)
+            $value = '{"protocol":1,"version":"' + $next + '"}'
+        } else { $value += "`n" }
         $writer = [IO.StreamWriter]::new($zip.CreateEntry($name).Open(), [Text.UTF8Encoding]::new($false))
         try { $writer.Write($value) } finally { $writer.Dispose() }
     } finally { $zip.Dispose() }
@@ -89,26 +94,17 @@ foreach ($variant in @('older','conflict')) {
     if ($LASTEXITCODE -ne 0) { throw "测试容器编译失败：$variant" }
     $destination = if ($variant -eq 'older') { 'A' } else { 'B' }
     Copy-Item -LiteralPath (Join-Path $variantRoot 'bin/RimUnity.Embedded.dll') -Destination (Join-Path $fixtures "$destination/1.7/Assemblies/RimUnity.Embedded.dll") -Force
-    $scenario = if ($variant -eq 'older') { 'newest' } else { 'conflict' }
+    $scenario = if ($variant -ne 'conflict') { 'newest' } else { 'conflict' }
     & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures $scenario
     if ($LASTEXITCODE -ne 0) { throw "候选载荷验证失败：$scenario" }
     Copy-Item -LiteralPath (Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll') -Destination (Join-Path $fixtures "$destination/1.7/Assemblies/RimUnity.Embedded.dll") -Force
 
-    if ($variant -eq 'older') {
-        Copy-Item -LiteralPath (Join-Path $variantRoot 'bin/RimUnity.Embedded.dll') -Destination (Join-Path $standaloneDir 'RimUnity.Embedded.dll') -Force
-        foreach ($order in @('standalone-older-first','standalone-older-last')) {
-            & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures $order
-            if ($LASTEXITCODE -ne 0) { throw "旧独立包选版失败：$order" }
-        }
-        Copy-Item -LiteralPath (Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll') -Destination (Join-Path $standaloneDir 'RimUnity.Embedded.dll') -Force
-        foreach ($target in @('A','B')) {
-            Copy-Item -LiteralPath (Join-Path $variantRoot 'bin/RimUnity.Embedded.dll') -Destination (Join-Path $fixtures "$target/1.7/Assemblies/RimUnity.Embedded.dll") -Force
-        }
-        & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures 'standalone-newer-first'
-        if ($LASTEXITCODE -ne 0) { throw '新版独立包选版失败。' }
-        foreach ($target in @('A','B')) {
-            Copy-Item -LiteralPath (Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll') -Destination (Join-Path $fixtures "$target/1.7/Assemblies/RimUnity.Embedded.dll") -Force
-        }
+    if ($variant -ne 'older') {
+        Copy-Item -LiteralPath (Join-Path $variantRoot 'bin/RimUnity.Embedded.dll') -Destination (Join-Path $fixtures 'B/1.7/Assemblies/RimUnity.Embedded.dll') -Force
+        $standaloneScenario = if ($variant -eq 'newer') { 'standalone-newer-payload' } else { 'standalone-conflicting-payloads' }
+        & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures $standaloneScenario
+        if ($LASTEXITCODE -ne 0) { throw "独立版固定优先验证失败：$standaloneScenario" }
+        Copy-Item -LiteralPath (Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll') -Destination (Join-Path $fixtures 'B/1.7/Assemblies/RimUnity.Embedded.dll') -Force
     }
 
 }

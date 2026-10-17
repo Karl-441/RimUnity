@@ -19,7 +19,7 @@ $env:HARMONY_PATH = 'C:/Mods/Harmony/1.7/Assemblies/0Harmony.dll'
 
 使用 PowerShell 7 和 .NET 10 SDK。四个入口的职责如下：
 
-- `Build.ps1`：构建 Core、Runtime、Spine、内置接入包和 ShaderTool。`-SkipEmbedded` 保留参数兼容；独立版也依赖延迟载荷，因此仍生成载荷。
+- `Build.ps1`：构建 Core、Runtime、Spine、内置接入包和 ShaderTool。只构建独立版和工具时可用 `-SkipEmbedded`；完整发版还需构建内置包。
 - `Verify.ps1`：默认先调用一次 Build，再校验着色器。`-SkipBuild` 检查已有产物；`-Embedded` 加跑内置运行时离线测试；`-DataRoot` 加跑指定资源目录的 Prefab 检查。`-SkipBuild` 不会重建发布运行时和 ShaderTool，但内置测试仍会编译临时夹具和测试程序。
 - `Pack.ps1`：检查现有运行时、工具、内置接入包和文档镜像，生成发布包；不编译，也不更新文档。打包前应对当前源码完成 Build/Verify，文件存在不代表产物一定是最新的。
 - `Deploy.ps1`：显式部署独立模组到游戏并备份旧版本。Build、Verify、Pack 不调用它。

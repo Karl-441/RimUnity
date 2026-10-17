@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net10.0</TargetFramework><AssemblyName>OrdinaryFixture</AssemblyName></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp" HintPath="$(RimWorldDir)/Assembly-CSharp.dll" Private="false" />
+    <Reference Include="RimUnity.Core" HintPath="$(RuntimeDirectory)/RimUnity.Core.dll" Private="false" />
+    <Reference Include="RimUnity" HintPath="$(RuntimeDirectory)/RimUnity.dll" Private="false" />
+  </ItemGroup>
+  <Target Name="PublishOrdinaryFixture" AfterTargets="Build">
+    <MakeDir Directories="$(FixtureRoot)/Ordinary/1.7/Assemblies" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(FixtureRoot)/Ordinary/1.7/Assemblies" />
+  </Target>
+</Project>

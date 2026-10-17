@@ -2,8 +2,8 @@
 
 ## 构建、检查与发布
 
-- `Build.ps1`：构建运行时、延迟载荷和 ShaderTool，不执行部署。`-SkipEmbedded` 保留参数兼容；独立版也依赖载荷，因此仍会生成。
-- `Build-Embedded.ps1`：生成内置载荷、编译引用及独立版 Bootstrap；由运行时构建调用。
+- `Build.ps1`：构建运行时、延迟载荷和 ShaderTool，不执行部署。`-SkipEmbedded` 仅构建独立版和工具，不生成内置载荷。
+- `Build-Embedded.ps1`：生成内置载荷和编译引用；由运行时构建调用。
 - `Compile-Editor.ps1`：离线编译 Unity 插件源码，需要 Unity Editor 和工程路径。
 - `Verify.ps1`：构建并检查 GLSL，可额外检查指定资源目录。此入口调用 Build，不执行部署。
 - `Verify-Embedded.ps1`：离线验证版本选择、程序集身份及延迟内容加载。
@@ -18,7 +18,7 @@
 
 这些工程没有被主构建自动调用，但覆盖当前源码，不属于废弃文件：
 
-- `EmbeddedTests`：加载器、版本选择、跨程序集脚本与游戏启动夹具。
+- `EmbeddedTests`：独立版普通 DLL 兼容、内置加载器选版、跨程序集脚本与游戏启动夹具。
 - `CatalogPolicyTests`：资源目录加载策略。
 - `ExportProcessorTests`：Unity 导出处理器与文档库。
 - `PublishingTests`：资源发布、回滚、清单及增量导出。

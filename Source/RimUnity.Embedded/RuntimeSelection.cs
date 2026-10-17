@@ -7,7 +7,7 @@ using Verse;
 
 namespace RimUnity.Embedded;
 
-//所有启用入口完成扫描后统一选版；独立包与内容包只提供延迟载荷。
+//独立版优先，兼容普通 DLL 的提前类型扫描；无独立版时选择最高兼容内置载荷。
 internal static class RuntimeSelection
 {
     private static readonly string[] Names = { "RimUnity.Core", "RimUnity", "RimUnity.Spine" };
@@ -33,20 +33,20 @@ internal static class RuntimeSelection
         string root, provider, hash = "";
         bool standalone;
         bool deferred;
-        var legacy = mods.SingleOrDefault(m => IsStandalone(m) && m.assemblies.loadedAssemblies.Any(a => a.GetName().Name == "RimUnity"));
-        if (legacy != null)
+        var standaloneMod = mods.SingleOrDefault(m => IsStandalone(m) && m.assemblies.loadedAssemblies.Any(a => a.GetName().Name == "RimUnity"));
+        if (standaloneMod != null)
         {
-            //旧发行包已经进入 CLR，无法卸载。保留兼容旧版，但明确拒绝不兼容旧版。
-            runtime = legacy.assemblies.loadedAssemblies.Single(a => a.GetName().Name == "RimUnity");
+            //独立版已由原版加载，必须共用其类型，不能再加载或替换第二套运行时。
+            runtime = standaloneMod.assemblies.loadedAssemblies.Single(a => a.GetName().Name == "RimUnity");
             string protocol = runtime.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "RimUnityProtocol")?.Value;
             var version = Version.Parse(runtime.GetCustomAttribute<AssemblyFileVersionAttribute>().Version);
             if (protocol != "1" || version < content.Minimum)
-                throw new InvalidOperationException($"旧式独立 RimUnity 已提前加载，请升级为延迟加载版或停用旧包。/ Update standalone RimUnity to the deferred loader or disable it. Required: {content.Minimum}, installed: {version}");
-            root = Path.Combine(legacy.RootDir, "1.7");
-            provider = legacy.Name;
+                throw new InvalidOperationException($"独立 RimUnity 版本不兼容，请更新独立版。/ Update standalone RimUnity. Required: {content.Minimum}, installed: {version}");
+            root = Path.Combine(standaloneMod.RootDir, "1.7");
+            provider = standaloneMod.Name;
             standalone = true;
             deferred = false;
-            VerifyLoadedRuntime(legacy.assemblies.loadedAssemblies);
+            VerifyLoadedRuntime(standaloneMod.assemblies.loadedAssemblies);
         }
         else
         {

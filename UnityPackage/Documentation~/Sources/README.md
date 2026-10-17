@@ -8,14 +8,14 @@ RimUnity 是面向 RimWorld 1.7 的 Unity 资源导出与运行框架。在 Unit
 
 ## 快速开始
 
-**源码版本：0.1.12。已发布安装包见 [Releases](https://github.com/chezhou9413/RimUnity/releases)；本次加载器改动发布前，请从源码构建。**
+**源码版本：0.1.13。已发布安装包见 [Releases](https://github.com/chezhou9413/RimUnity/releases)；本次加载器改动发布前，请从源码构建。**
 
 | 接入方式 | 使用方法 |
 | --- | --- |
 | 独立前置 | 玩家启用 Harmony、RimUnity 和内容模组；所有内容共用独立前置。 |
 | 内置运行时 | 纯资源模组携带 `RimUnity.Embedded.dll`；C# 内容模组必须通过包内 `.targets` 发布延迟脚本。见[内置接入指南](Docs/zh-CN/EmbeddedRuntime.md)。 |
 
-**两种方式均需要 Harmony。** 从 0.1.12 起，独立版与内置载荷共同选择满足内容要求的最高兼容版本；同版本相同载荷优先独立包，全局只加载一套。旧式独立包需更新后才能参与选择。`References` 仅用于编译，不能额外复制到模组。没有联网检测或自动更新，支持离线游玩。
+**两种方式均需要 Harmony。** 从 0.1.13 起，独立版恢复提前加载，以兼容已有普通 DLL 模组；启用时固定使用独立版，内容模组应在它之后加载。未启用独立版时，选择满足内容要求的最高兼容内置版本。`References` 仅用于编译，不能额外复制到模组。没有联网检测或自动更新，支持离线游玩。
 
 RimUnity 基于 Waylith 提供兼容接口，**不包含、也不另行加载真正的 Unity 引擎**。0.1.11 支持粒子尺寸限制，修复拖尾朝向，并支持动态 FullRect Sprite 的矩形几何。详见[更新说明](Docs/zh-CN/Release-0.1.11.md)。
 

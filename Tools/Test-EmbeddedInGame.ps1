@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$FixtureRoot, [string]$LegacyCarrier = '')
+﻿param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$FixtureRoot, [string]$LegacyCarrier = '')
 $ErrorActionPreference = 'Stop'
 if ($LegacyCarrier -and !(Test-Path -LiteralPath $LegacyCarrier -PathType Leaf)) { throw '历史加载器文件不存在。' }
 if (Get-Process RimWorld,RimWorldWin64 -ErrorAction SilentlyContinue) { throw '游戏正在运行；请结束当前会话后再执行测试。' }
@@ -8,7 +8,7 @@ $run = Join-Path ([IO.Path]::GetTempPath()) ('RimUnity/GameVerification-' + [Gui
 $modsRoot = [IO.Path]::GetFullPath((Join-Path $GameRoot 'Mods'))
 $live = [IO.Path]::GetFullPath((Join-Path $modsRoot 'RimUnity'))
 $backup = [IO.Path]::GetFullPath((Join-Path $run 'Original-RimUnity'))
-$testMods = @('A','B','C') | ForEach-Object { [IO.Path]::GetFullPath((Join-Path $modsRoot "RimUnity.EmbeddedVerification.$_")) }
+$testMods = @('A','B','C','Ordinary') | ForEach-Object { [IO.Path]::GetFullPath((Join-Path $modsRoot "RimUnity.EmbeddedVerification.$_")) }
 #所有移动、删除目标都先核对绝对路径；原模组备份在游戏扫描目录之外。
 foreach ($path in @($live) + $testMods) {
     if ([IO.Path]::GetDirectoryName($path) -ne $modsRoot) { throw "测试路径越界：$path" }
@@ -22,6 +22,20 @@ $hadOriginal = Test-Path -LiteralPath $live
 $movedOriginal = $false
 $liveCreated = $false
 $process = $null
+#进程退出后杀毒/文件映射可能短暂占用 DLL；清理失败仍必须恢复原独立版。
+function Remove-TestDirectory([string]$path) {
+    $absolute = [IO.Path]::GetFullPath($path)
+    if ([IO.Path]::GetDirectoryName($absolute) -ne $modsRoot) { throw "清理路径越界：$path" }
+    for ($attempt = 0; $attempt -lt 10; $attempt++) {
+        try {
+            if (Test-Path -LiteralPath $absolute) { Remove-Item -LiteralPath $absolute -Recurse -Force }
+            return
+        } catch [IO.IOException], [UnauthorizedAccessException] {
+            if ($attempt -eq 9) { throw }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+}
 try {
     if ($hadOriginal) { Move-Item -LiteralPath $live -Destination $backup; $movedOriginal = $true }
     $liveCreated = $true
@@ -38,10 +52,15 @@ try {
         $carrier = if ($letter -eq 'A' -and $LegacyCarrier) { $LegacyCarrier } else { Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll' }
         Copy-Item -LiteralPath $carrier -Destination (Join-Path $target '1.7/Assemblies/RimUnity.Embedded.dll') -Force
     }
+    $ordinary = $testMods[3]
+    Copy-Item -LiteralPath (Join-Path $FixtureRoot 'Ordinary') -Destination $ordinary -Recurse
+    [IO.Directory]::CreateDirectory((Join-Path $ordinary 'About')) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $ordinary 'About/About.xml'), '<ModMetaData><name>RimUnity Ordinary DLL Test</name><author>RimUnity verification</author><packageId>test.ordinary</packageId><supportedVersions><li>1.7</li></supportedVersions><description>Ordinary DLL compatibility fixture.</description><modDependencies><li><packageId>Chezhou.RimUnity</packageId><displayName>RimUnity</displayName></li></modDependencies><loadAfter><li>Chezhou.RimUnity</li></loadAfter></ModMetaData>', [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $ordinary 'LoadFolders.xml'), '<loadFolders><v1.7><li>1.7</li></v1.7></loadFolders>', [Text.UTF8Encoding]::new($false))
     foreach ($mode in @('standalone','embedded')) {
         $save = Join-Path $run $mode
         [IO.Directory]::CreateDirectory((Join-Path $save 'Config')) | Out-Null
-        $standalone = if ($mode -eq 'standalone') { '<li>chezhou.rimunity</li>' } else { '' }
+        $standalone = if ($mode -eq 'standalone') { '<li>chezhou.rimunity</li><li>test.ordinary</li>' } else { '' }
         [IO.File]::WriteAllText((Join-Path $save 'Config/ModsConfig.xml'), "<ModsConfigData><version>1.7.4980 rev60</version><activeMods><li>brrainz.harmony</li><li>test.a</li>$standalone<li>ludeon.rimworld</li><li>test.b</li><li>test.c</li></activeMods></ModsConfigData>", [Text.UTF8Encoding]::new($false))
         [IO.File]::WriteAllText((Join-Path $save 'Config/Prefs.xml'), '<PrefsData><screenWidth>1024</screenWidth><screenHeight>768</screenHeight><fullscreen>False</fullscreen><volumeMaster>0</volumeMaster><langFolderName>English</langFolderName><devMode>True</devMode></PrefsData>', [Text.UTF8Encoding]::new($false))
         $process = Start-Process -FilePath (Join-Path $GameRoot 'RimWorld.exe') -WorkingDirectory $GameRoot -ArgumentList "-savedatafolder=$save", '-RimUnityEmbeddedTest' -WindowStyle Hidden -PassThru
@@ -53,17 +72,19 @@ try {
         $reportPath = Join-Path $save 'RimUnity-embedded-report.json'
         if (!(Test-Path -LiteralPath $reportPath)) { throw "游戏未生成测试报告：$save" }
         $report = Get-Content -LiteralPath $reportPath -Encoding UTF8 -Raw | ConvertFrom-Json
-        if (!$report.passed -or $report.source -ne $mode -or $report.copies -ne $(if ($mode -eq 'standalone') { 4 } else { 3 })) { throw "游戏测试未通过：$reportPath" }
-        if (!(Test-Path -LiteralPath (Join-Path $save 'RimUnity/Embedded'))) { throw '选中的延迟载荷应创建资源缓存。' }
+        if (!$report.passed -or $report.source -ne $mode -or $report.copies -ne 3) { throw "游戏测试未通过：$reportPath" }
+        $hasCache = Test-Path -LiteralPath (Join-Path $save 'RimUnity/Embedded')
+        if ($hasCache -ne ($mode -eq 'embedded')) { throw '独立版不应释放内置载荷；内置版应创建资源缓存。' }
+        if ($mode -eq 'standalone' -and !$report.ordinaryDll) { throw '普通 DLL 未通过真实游戏兼容验证。' }
         Write-Output "PASS 游戏启动：$mode；3 个内置测试模组；报告=$reportPath"
     }
 } finally {
     if ($process -and !$process.HasExited) { Stop-Process -Id $process.Id -Force }
     #只清理本次预先核对过、由本脚本创建的路径，并恢复原前置。
     try {
-        foreach ($path in $testMods) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force } }
+        foreach ($path in $testMods) { Remove-TestDirectory $path }
     } finally {
-        if ($liveCreated -and (Test-Path -LiteralPath $live)) { Remove-Item -LiteralPath $live -Recurse -Force }
+        if ($liveCreated) { Remove-TestDirectory $live }
         if ($movedOriginal) { Move-Item -LiteralPath $backup -Destination $live }
     }
     Write-Output "原模组已恢复，测试资料保留：$run"

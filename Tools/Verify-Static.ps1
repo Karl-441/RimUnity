@@ -54,9 +54,6 @@ function Get-TrackedFiles([string[]]$patterns) {
 $KnownDebt = @(
     # 清单 P0-①：含中文却缺 UTF-8 BOM，Windows PowerShell 5.1 下乱码或解析失败
     @{ Rule = 'ps1-bom';       Path = 'Tools/Artwork/Draw-ModIcon.ps1';            Reason = '清单 P0-①：缺 UTF-8 BOM' }
-    @{ Rule = 'ps1-bom';       Path = 'Tools/Build-Embedded.ps1';                  Reason = '清单 P0-①：缺 UTF-8 BOM' }
-    @{ Rule = 'ps1-bom';       Path = 'Tools/Copy-RuntimePackage.ps1';             Reason = '清单 P0-①：缺 UTF-8 BOM' }
-    @{ Rule = 'ps1-bom';       Path = 'Tools/Test-EmbeddedInGame.ps1';             Reason = '清单 P0-①：缺 UTF-8 BOM' }
     # 清单 P0-②：把本机安装路径写死在工程与默认值里
     @{ Rule = 'absolute-path'; Path = 'Tools/ScreenEfxTests/Program.cs';           Reason = '清单 P0-②：写死本机安装路径' }
     @{ Rule = 'absolute-path'; Path = 'Tools/ScreenEfxTests/ScreenEfxTests.csproj'; Reason = '清单 P0-②：写死本机安装路径' }

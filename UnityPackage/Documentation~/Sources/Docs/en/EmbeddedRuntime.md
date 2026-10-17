@@ -1,4 +1,4 @@
-# Embedded runtime integration · 0.1.12
+# Embedded runtime integration · 0.1.13
 
 The embedded package contains the same `RimUnity.Core`, `RimUnity` and `RimUnity.Spine` assemblies and public types as the standalone mod, plus all built-in Defs, GLSL, bilingual settings text and licenses. `RimUnity.Embedded.dll` is a container and bootstrap, not a separate API. It contains no real Unity engine, game assemblies or Harmony.
 
@@ -6,13 +6,13 @@ The filename stays `RimUnity.Embedded.dll`. Its internal container assembly name
 
 ## Download and dependencies
 
-Build the 0.1.12 standalone and embedded packages together with `Tools/Build.ps1`, then package with `Tools/Pack.ps1`. Keep `RimUnity.Embedded.dll`, `RimUnity.Embedded.targets` and `References/` together when integrating.
+Build the standalone and embedded release packages together with `Tools/Build.ps1`, then package with `Tools/Pack.ps1`. Keep `RimUnity.Embedded.dll`, `RimUnity.Embedded.targets` and `References/` together when integrating.
 
 Both integration modes require RimWorld 1.7 and Harmony. Declare `brrainz.harmony` as a dependency in the content mod's About.xml and load after it. Embedded mode does not require a mandatory `Chezhou.RimUnity` dependency. Resource-only mods may simply copy the embedded DLL into an active load folder's `Assemblies`, usually `1.7/Assemblies`. Never copy References there.
 
 ## C# content mods
 
-Every assembly that needs RimUnity types during early type discovery, including MonoBehaviour inheritance, Mod classes, fields and cross-assembly references, must participate. **Copying the embedded DLL into an arbitrary existing C# mod is not sufficient.**
+C# assemblies using embedded mode, including MonoBehaviour inheritance, Mod classes, fields and cross-assembly references, must participate. Since 0.1.13, ordinary DLL mods can continue depending on standalone `Chezhou.RimUnity` and loading after it; they need not migrate to `.rimunity`. **Copying the embedded DLL into an arbitrary existing C# mod is not sufficient.**
 
 For a project at `MyMod/Source/MyMod/`, with the package extracted into `MyMod/Dependencies/RimUnity.Embedded/`:
 
@@ -42,10 +42,10 @@ When migrating, remove old content DLLs and loose RimUnity/Core/Spine DLLs from 
 
 ## Selection and loading
 
-1. Since 0.1.12, standalone `Chezhou.RimUnity` exposes only a bootstrap under `Bootstrap/Assemblies`. Payloads from all enabled load folders compete together: the highest version with a compatible protocol satisfying every content requirement wins regardless of load order. Identical versions and payloads prefer standalone; different payloads with the same version report a conflict.
-2. Only the selected DLLs, Defs and shaders load, sharing one set of types across content mods. Legacy standalone releases eagerly load ordinary DLLs and must be updated to participate in selection. Compatible legacy releases remain supported; those below the required minimum report an error. Disabled mods, unrelated directories and network releases do not participate.
+1. Since 0.1.13, standalone `Chezhou.RimUnity` again provides ordinary runtime DLLs under `1.7/Assemblies`, loaded by the game before dependent C# type discovery. When enabled, standalone supplies DLLs, Defs and shaders; embedded payloads cannot replace it and are not read or mounted. Standalone must meet content version requirements; update it when it does not.
+2. Without standalone, enabled mods' active load folders compete for the highest compatible embedded payload satisfying all deferred content requirements. Different payloads with the same version report a conflict; identical copies run once. Disabled mods, unrelated folders and network releases do not participate. A content mod carrying an embedded runtime cannot directly replace the standalone dependency required by ordinary DLL mods.
 3. After the game's first Mod construction pass, the bootstrap runs before `LoadModXML`. It registers runtime assemblies and creates the runtime Mod, then loads deferred content assemblies, registers each with its own ModContentPack, clears type caches and constructs new Mod instances. Reentry or repeated XML calls cannot initialize twice.
-4. Selected framework resources are extracted into `RimUnity/Embedded/<payload-SHA256>` under the game's user data directory. Only that folder is attached to the selected provider; existing content folders stay intact. Corrupt cache files report an error. Close the game and remove only the reported hash directory to recreate it on the next launch.
+4. In embedded mode only, selected framework resources are extracted into `RimUnity/Embedded/<payload-SHA256>` under the game's user data directory. Only that folder is attached to the selected provider; existing content folders stay intact. Corrupt cache files report an error. Close the game and remove only the reported hash directory to recreate it on the next launch.
 
 Content assets remain under their own `1.7/Data/RimUnity`. Continue passing the owning content mod to `PrefabLoader.Load(contentMod, path)`. Embedding does not merge or overwrite other mods' assets or change content Mod ownership. The Unity export workflow is unchanged; there is no additional export option.
 
@@ -56,13 +56,13 @@ Selection is entirely local, with no connectivity check, background download or 
 | Error | Action |
 | --- | --- |
 | Early DLL load or mixed References | Remove regular content/runtime DLLs and rebuild through targets; check every cross-assembly dependency. |
-| Incompatible standalone | Update or disable the legacy standalone package that already loaded its DLLs. |
+| Incompatible standalone | Update standalone RimUnity; an already loaded runtime cannot be replaced. |
 | Same-version payload conflict | Use one identical release package across affected mods; do not relabel different builds as the same version. |
 | Duplicate content identity | Use a unique AssemblyName per content assembly; do not deploy it in multiple mods. |
 | Missing JSON or type | Preserve the sidecar JSON and ensure dependent assemblies use deferred integration and their mods are enabled. |
 
 RimUnity's original code is MIT licensed. UGUI retains its MIT notice; Spine Runtime has separate licensing. Licenses are inside the DLL and also provided as readable `LICENSE` and `ThirdParty/` files. References are for compilation only and must not be deployed as extra runtimes.
 
-The bootstrap reuses the game's assembly registry and only scans mods carrying an embedded entry point. It does not recursively traverse unrelated mod folders. Each actual embedded copy still requires validation; standalone payloads participate in validation as well. Deferred scripts also require game type-cache refreshes, whose cost depends on the full list's type count.
+The bootstrap reuses the game's assembly registry and only scans mods carrying an embedded entry point. It does not recursively traverse unrelated mod folders. Embedded mode validates candidate payloads; standalone mode reuses the already loaded runtime. Deferred scripts also require game type-cache refreshes, whose cost depends on the full list's type count.
 
 When reporting a loading issue, include the game log and the version, source and provider shown on the Runtime settings page to identify the selected runtime.

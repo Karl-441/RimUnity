@@ -35,16 +35,18 @@ internal static class Harness
         var a = Mod(Path.Combine(fixtures, "A"), "test.a");
         var b = Mod(Path.Combine(fixtures, "B"), "test.b");
         var independent = Mod(Path.Combine(fixtures, "Standalone"), "Chezhou.RimUnity");
+        var ordinary = Mod(Path.Combine(fixtures, "Ordinary"), "test.ordinary");
         var mods = scenario switch
         {
-            "legacy-first" => new[] { a, independent, b },
-            "legacy-last" => new[] { independent, a, b },
+            "legacy-first" => new[] { a, b },
+            "legacy-last" => new[] { b, a },
             "single" => new[] { a },
             "reverse" => new[] { b, a },
             "standalone-only" => new[] { independent },
-            "standalone-older-first" => new[] { independent, a, b },
-            "standalone-older-last" => new[] { a, b, independent },
-            "standalone-newer-first" => new[] { independent, a, b },
+            "ordinary-standalone" => new[] { independent, ordinary, a, b },
+            "ordinary-standalone-only" => new[] { independent, ordinary },
+            "standalone-newer-payload" => new[] { independent, a, b },
+            "standalone-conflicting-payloads" => new[] { independent, a, b },
             "standalone-first" => new[] { independent, a, b },
             "standalone-middle" => new[] { a, independent, b },
             "standalone-last" => new[] { b, a, independent },
@@ -69,10 +71,17 @@ internal static class Harness
             mod.assemblies.loadedAssemblies.Add(assembly);
         }
         Assert(!AppDomain.CurrentDomain.GetAssemblies().Any(x => x.GetName().Name == "EmbeddedFixture.Library"), "content is deferred before Mod construction");
-        Assert(!AppDomain.CurrentDomain.GetAssemblies().Any(x => x.GetName().Name == "RimUnity"), "runtime deferred even when standalone is first");
+        bool standalone = mods.Contains(independent);
+        Assert(AppDomain.CurrentDomain.GetAssemblies().Any(x => x.GetName().Name == "RimUnity") == standalone,
+            "standalone runtime is available during ordinary DLL scanning; embedded stays deferred");
+        if (mods.Contains(ordinary))
+        {
+            var ordinaryAssembly = ordinary.assemblies.loadedAssemblies.Single(x => x.GetName().Name == "OrdinaryFixture");
+            Assert(ordinaryAssembly.GetType("Fixture.OrdinaryScript").BaseType.FullName == "RimUnity.MonoBehaviour", "ordinary DLL inheritance resolves before Mod construction");
+        }
         if (scenario.StartsWith("legacy"))
         {
-            var first = scenario == "legacy-first" ? a : independent;
+            var first = scenario == "legacy-first" ? a : b;
             var bootstrap = first.assemblies.loadedAssemblies.Single(x => x.GetName().Name.StartsWith("RimUnity.Embedded."))
                 .GetType("RimUnity.Embedded.EmbeddedBootstrap", true);
             bootstrap.GetConstructor(new[] { typeof(ModContentPack) }).Invoke(new object[] { first });
@@ -80,31 +89,35 @@ internal static class Harness
             Assert(Harmony.GetPatchInfo(AccessTools.Method(typeof(LoadedModManager), "LoadModXML")).Prefixes.Any(p => p.owner == owner), "requested bootstrap really constructs first");
         }
         LoadedModManager.CreateModClasses();
+        if (mods.Contains(ordinary))
+        {
+            Assert(AppDomain.CurrentDomain.GetData("RimUnity.Test.OrdinaryConstructed") is string, "ordinary Mod accesses runtime before XML bootstrap");
+            Assert(LoadedModManager.ModHandles.Single(m => m.GetType().FullName == "Fixture.OrdinaryMod").Content == ordinary, "ordinary Mod retains its owner");
+        }
         var timer = System.Diagnostics.Stopwatch.StartNew();
         LoadedModManager.LoadModXML();
         Console.WriteLine($"TIMING {scenario}: {active.Count} active mods; bootstrap {timer.Elapsed.TotalMilliseconds:F2} ms");
         LoadedModManager.LoadModXML();
         if (scenario == "incompatible-standalone" || scenario == "conflict")
         {
-            string expected = scenario == "conflict" ? "Conflicting embedded payloads" : "No compatible embedded runtime";
+            string expected = scenario == "conflict" ? "Conflicting embedded payloads" : "Update standalone RimUnity";
             Assert(errors.Count == 1 && errors[0].Contains(expected), "explicit error: " + scenario);
             Assert(mounted == 0 && !Directory.Exists(cache), "failure never mounts or extracts fallback resources");
-            Assert(runtimeInitializations == 0, "no extra runtime on failure");
+            Assert(runtimeInitializations == (standalone ? 1 : 0), "no extra runtime on failure");
             Assert(!AppDomain.CurrentDomain.GetAssemblies().Any(x => x.GetName().Name == "EmbeddedFixture.Library"), "incompatible content not loaded");
             return;
         }
         if (errors.Count > 0) throw new Exception(string.Join("\n", errors));
-        bool standalone = scenario.StartsWith("legacy") || scenario.StartsWith("standalone") && !scenario.StartsWith("standalone-older");
         var selectedRuntime = AppDomain.CurrentDomain.GetAssemblies().Single(x => x.GetName().Name == "RimUnity");
-        Assert((bool)selectedRuntime.GetType("RimUnity.RuntimeInfo").GetProperty("IsStandalone").GetValue(null) == standalone, "highest compatible provider chosen independently of load order");
+        Assert((bool)selectedRuntime.GetType("RimUnity.RuntimeInfo").GetProperty("IsStandalone").GetValue(null) == standalone, "standalone is used when enabled; otherwise embedded supplies runtime");
         Assert(runtimeInitializations == 1, "one runtime initialization across repeated XML calls");
-        Assert(mounted == 1, "only selected payload resources mount");
-        Assert(shaderRegistrations == 1, "shader registration matches selected source");
-        Assert(active.Sum(m => m.foldersToLoadDescendingOrder.Count - 1) == 1, "one Def resource folder, independent content folders preserved");
-        Assert(Directory.Exists(cache), "selected runtime uses one extracted payload");
+        Assert(mounted == (standalone ? 0 : 1), "only selected payload resources mount");
+        Assert(shaderRegistrations == (standalone ? 0 : 1), "shader registration matches selected source");
+        Assert(active.Sum(m => m.foldersToLoadDescendingOrder.Count - 1) == (standalone ? 0 : 1), "one Def resource folder, independent content folders preserved");
+        Assert(Directory.Exists(cache) == !standalone, "standalone never extracts or mounts an embedded payload");
         foreach (string name in new[] { "RimUnity", "RimUnity.Core", "RimUnity.Spine" })
             Assert(AppDomain.CurrentDomain.GetAssemblies().Count(x => x.GetName().Name == name) == 1, "unique CLR identity: " + name);
-        if (scenario == "standalone-only") { Console.WriteLine("PASS scenario " + scenario); return; }
+        if (scenario == "standalone-only" || scenario == "ordinary-standalone-only") { Console.WriteLine("PASS scenario " + scenario); return; }
         var library = a.assemblies.loadedAssemblies.Single(x => x.GetName().Name == "EmbeddedFixture.Library");
         if (scenario == "newest")
             Assert((string)AppDomain.CurrentDomain.GetAssemblies().Single(x => x.GetName().Name == "RimUnity").GetType("RimUnity.RuntimeInfo").GetProperty("Provider").GetValue(null) == "test.b", "newer compatible payload wins over first-loaded container");
@@ -126,7 +139,7 @@ internal static class Harness
         AccessTools.Field(typeof(ModContentPack), "rootDirInt").SetValue(mod, new DirectoryInfo(root));
         AccessTools.Field(typeof(ModContentPack), "packageIdInt").SetValue(mod, id);
         AccessTools.Field(typeof(ModContentPack), "nameInt").SetValue(mod, id);
-        mod.foldersToLoadDescendingOrder = new() { Path.Combine(root, id == "Chezhou.RimUnity" ? "Bootstrap" : "1.7") };
+        mod.foldersToLoadDescendingOrder = new() { Path.Combine(root, "1.7") };
         mod.assemblies = new ModAssemblyHandler(mod);
         return mod;
     }

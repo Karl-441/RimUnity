@@ -23,6 +23,7 @@ public static class StartupReport
     private static void Write()
     {
         string error = null;
+        bool ordinaryDll = false;
         try
         {
             if (!RimUnity.RimUnityMod.IsRuntimeReady) throw new Exception("Runtime host not installed");
@@ -37,10 +38,19 @@ public static class StartupReport
                 if (!mod.Content.assemblies.loadedAssemblies.Contains(mod.GetType().Assembly)) throw new Exception("Mod ownership mismatch");
             var instance = new RimUnity.GameObject("EmbeddedVerification");
             instance.AddComponent<BaseScript>();
+            if (LoadedModManager.RunningMods.Any(m => m.PackageId == "test.ordinary"))
+            {
+                var owner = LoadedModManager.RunningMods.Single(m => m.PackageId == "test.ordinary");
+                var assembly = owner.assemblies.loadedAssemblies.Single(a => a.GetName().Name == "OrdinaryFixture");
+                if (AppDomain.CurrentDomain.GetData("RimUnity.Test.OrdinaryConstructed") is not string)
+                    throw new Exception("Ordinary DLL Mod constructor did not run");
+                instance.AddComponent(assembly.GetType("Fixture.OrdinaryScript", true));
+                ordinaryDll = true;
+            }
             RimUnity.Object.Destroy(instance);
         }
         catch (Exception exception) { error = exception.ToString(); Log.Error("[EmbeddedTest] " + error); }
-        var report = new { passed = error == null, error, source = RimUnity.RuntimeInfo.IsStandalone ? "standalone" : "embedded",
+        var report = new { passed = error == null, error, ordinaryDll, source = RimUnity.RuntimeInfo.IsStandalone ? "standalone" : "embedded",
             version = RimUnity.RuntimeInfo.Version, provider = RimUnity.RuntimeInfo.Provider, copies = RimUnity.RuntimeInfo.EmbeddedCopies,
             resourceRoot = RimUnity.RuntimeInfo.ResourceRoot, markers = DefDatabase<MarkerDef>.AllDefsListForReading.Select(d => new { d.defName, owner = d.modContentPack.PackageId }).ToArray() };
         File.WriteAllText(Path.Combine(GenFilePaths.SaveDataFolderPath, "RimUnity-embedded-report.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
