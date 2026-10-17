@@ -13,8 +13,9 @@
 
 **什么时候跑**：`main` / `keep_branch` 的 `push`，以及 `pull_request`。
 
-**跑什么**：`Tools/Verify-Static.ps1`、`Tools/Test-BuildWorkflow.ps1`（两个 PowerShell 宿主各运行一次）
-与 `Tools/Test-OfflineProjects.ps1`（4 个离线测试工程）。静态检查做的是不需要编译、不需要游戏的那一类检查——
+**跑什么**：`Tools/Verify-Static.ps1`、`Tools/Test-BuildWorkflow.ps1`、`Tools/Test-ModsSwap.ps1`
+（三个都在两个 PowerShell 宿主各运行一次）与 `Tools/Test-OfflineProjects.ps1`（4 个离线测试工程）。
+静态检查做的是不需要编译、不需要游戏的那一类检查——
 
 - 离线文档镜像（`UnityPackage/Documentation~/`）与 `sources.json` 是否与源文件一致；
 - 发布号是否单一来源（`About/About.xml`、`Source/Directory.Build.props`、`UnityPackage/package.json`）、
@@ -56,6 +57,27 @@ pwsh -File Tools/Test-OfflineProjects.ps1     # 本地等价命令
 
 注意别给 `dotnet run` 追加 `--nologo` 这类开关——它会被当成**程序参数**传进去，
 而 `MemoryAttributionTests` 带参数时会进入需要游戏 DLL 的反射分支。
+
+### `Mods/RimUnity` 交换的崩溃安全
+
+第三层的游戏内测试要把真实的 `Mods/RimUnity` 临时换掉，`Tools/ModsSwap.ps1` 负责这件事。
+它不靠 `finally`（进程被强杀时不会执行），靠三条不变量：
+
+1. 状态目录固定在 `<GameRoot>/.rimunity-ci`，与被替换目录**同卷** → 移动等于原子 rename；
+   跨卷直接拒绝（跨卷 Move 是复制+删除，不是原子的）。
+2. 先落盘再改文件系统。journal 用只增不改的世代文件（`mods-swap-001.json`…），
+   写新世代是纯 rename、从不覆盖旧文件；读取时取序号最大且能解析的那个，
+   因此断电最多丢最新一代，上一代仍可读。
+3. `Repair-ModsSwap` 可重复执行：按 journal 删掉登记的测试模组目录，按 marker 区分
+   「我们的测试副本」与「用户自己的 RimUnity」（后者一律不动），再把备份原子移回原位。
+
+被强杀后有两种恢复路径，都不会留下异常：下一次跑 `Tools/Test-EmbeddedInGame.ps1` 时开头会先自动修复；
+或者手动执行 `pwsh -File Tools/ModsSwap.ps1 -Action Repair -GameRoot <游戏根目录>`
+（`-Action Status` 只查看有没有未完成的交换）。
+
+`Tools/Test-ModsSwap.ps1` 把 9 个窗口都测了：正常往返、只写了 planned 还没移动、移动后 journal
+停在 planned、backed-up、live 是非测试副本（拒绝动别人的）、备份丢失且 live 不存在（明确报错并保留
+journal）、重复修复、只清理登记过的目录、同卷校验。
 
 ---
 

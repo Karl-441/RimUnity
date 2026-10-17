@@ -63,6 +63,15 @@ jobs:
         shell: powershell
         run: ./Tools/Test-BuildWorkflow.ps1
 
+      # Mods/RimUnity 交换的崩溃窗口自测：不启动游戏、不碰真实安装。
+      - name: 交换状态恢复回归（PowerShell 7）
+        shell: pwsh
+        run: ./Tools/Test-ModsSwap.ps1
+
+      - name: 交换状态恢复回归（Windows PowerShell 5.1）
+        shell: powershell
+        run: ./Tools/Test-ModsSwap.ps1
+
       # 4 个不需要游戏、不需要 Unity 的测试工程。RenderDiagnosticsTests 需要
       # <RimUnity.dll> <游戏目录> <0Harmony.dll> 三个参数，只能在第二层跑。
       - name: 离线测试工程
