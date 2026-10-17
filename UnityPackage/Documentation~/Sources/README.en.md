@@ -36,6 +36,20 @@ instance.transform.position = new RimUnity.Vector3(x, y, z);
 
 `contentMod` is the mod that owns the assets. Exported resources live in its `1.7/Data/RimUnity` directory. Load them using the logical path entered in the export window.
 
+## Build from source
+
+Use PowerShell 7, the .NET 10 SDK, a RimWorld 1.7 installation and Harmony:
+
+```powershell
+$env:HARMONY_PATH = 'C:/Mods/Harmony/1.7/Assemblies/0Harmony.dll'
+./Tools/Verify.ps1 -GameRoot 'C:/Games/RimWorld' -Embedded
+# After changing documentation, update the offline mirror explicitly before packaging:
+pwsh -File ./Tools/Sync-Manual.ps1
+./Tools/Pack.ps1 -Output 'C:/out'
+```
+
+`Build.ps1` builds the runtime, embedded integration package and ShaderTool. `Verify.ps1` builds once by default, then checks shaders; `-Embedded` adds offline runtime tests. Use `-SkipBuild` to verify existing outputs from this checkout. `Pack.ps1` validates and packages existing outputs without rebuilding or rewriting documentation. Deployment and in-game testing remain explicit, separate commands. See [the workflow](Docs/en/Workflow.md) for options and output locations.
+
 ## Documentation
 
 Open **RimUnity → 百科全书** in Unity for the offline handbook, full-text search, and bundled README/documentation originals. Export callbacks are described in [export processors](Docs/en/ExportProcessors.md).

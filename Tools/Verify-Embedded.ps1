@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$HarmonyPath)
+﻿param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$HarmonyPath)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $fixtures = Join-Path ([IO.Path]::GetTempPath()) ('RimUnity/Embedded-' + [Guid]::NewGuid().ToString('N'))
@@ -18,7 +18,9 @@ foreach ($scenario in @('single','duplicates','reverse','standalone-first','stan
 #提升内容版本要求，验证不兼容前置不会被内置载荷替代。
 $manifest = Join-Path $fixtures 'A/1.7/Assemblies/EmbeddedFixture.Library.rimunity.json'
 $originalManifest = [IO.File]::ReadAllText($manifest)
-[IO.File]::WriteAllText($manifest, '{"protocol":1,"minimumVersion":"0.1.10"}', [Text.UTF8Encoding]::new($false))
+$standaloneVersion = [Version][Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $repo '1.7/Assemblies/RimUnity.dll')).FileVersion
+$requiredVersion = [Version]::new($standaloneVersion.Major, $standaloneVersion.Minor, $standaloneVersion.Build, [Math]::Max($standaloneVersion.Revision, 0) + 1)
+[IO.File]::WriteAllText($manifest, '{"protocol":1,"minimumVersion":"' + $requiredVersion + '"}', [Text.UTF8Encoding]::new($false))
 & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures 'incompatible-standalone'
 if ($LASTEXITCODE -ne 0) { throw '不兼容独立前置验证失败。' }
 [IO.File]::WriteAllText($manifest, $originalManifest, [Text.UTF8Encoding]::new($false))

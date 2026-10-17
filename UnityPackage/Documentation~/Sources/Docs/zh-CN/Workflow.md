@@ -11,13 +11,25 @@
 从源码安装可在仓库根目录构建（替换自己的路径）：
 
 ```powershell
-dotnet build ./Source/RimUnity/RimUnity.csproj -c Release `
-  -p:RimWorldDir='C:/Games/RimWorld' `
-  -p:HarmonyPath='C:/Mods/Harmony/1.7/Assemblies/0Harmony.dll'
-
-dotnet build ./Source/RimUnity.ShaderTool/RimUnity.ShaderTool.csproj -c Release `
-  -p:RimWorldDir='C:/Games/RimWorld'
+$env:RIMWORLD_DIR = 'C:/Games/RimWorld'
+$env:HARMONY_PATH = 'C:/Mods/Harmony/1.7/Assemblies/0Harmony.dll'
+./Tools/Build.ps1
+./Tools/Verify.ps1 -SkipBuild -Embedded
 ```
+
+使用 PowerShell 7 和 .NET 10 SDK。四个入口的职责如下：
+
+- `Build.ps1`：构建 Core、Runtime、Spine、内置接入包和 ShaderTool。只需运行时与工具时可用 `-SkipEmbedded`；这种构建不满足完整打包要求。
+- `Verify.ps1`：默认先调用一次 Build，再校验着色器。`-SkipBuild` 检查已有产物；`-Embedded` 加跑内置运行时离线测试；`-DataRoot` 加跑指定资源目录的 Prefab 检查。`-SkipBuild` 不会重建发布运行时和 ShaderTool，但内置测试仍会编译临时夹具和测试程序。
+- `Pack.ps1`：检查现有运行时、工具、内置接入包和文档镜像，生成发布包；不编译，也不更新文档。打包前应对当前源码完成 Build/Verify，文件存在不代表产物一定是最新的。
+- `Deploy.ps1`：显式部署独立模组到游戏并备份旧版本。Build、Verify、Pack 不调用它。
+
+一次构建并验证可直接运行 `./Tools/Verify.ps1 -Embedded`，无需先 Build。已有产物的 CI 则运行 `Build.ps1` → `Verify.ps1 -SkipBuild -Embedded`。`Verify-Embedded.ps1` 仍可单独调用；它不构建发行运行时，需要先 Build。真实游戏测试由 `Test-EmbeddedInGame.ps1` 单独执行，离线验证不替代游戏内渲染验证。
+
+不需要游戏或 SDK 的入口回归检查：`pwsh -File ./Tools/Test-BuildWorkflow.ps1`。它验证调用顺序、跳过构建、失败中断和打包前置检查，不代替真实编译。
+
+产物位置：运行时在 `1.7/Assemblies`，ShaderTool 在 `Tools/bin/ShaderTool`，内置接入包在 `artifacts/Embedded`，默认发布包在 `artifacts`。编译会改写仓库跟踪的 Runtime/Core DLL，提交源码时应排除无意的二进制变更。
+
 
 `Directory.Build.props` 不再提供任何默认路径。除上面的 `-p:` 参数外，也可以先设置环境变量，之后直接调用 `dotnet build`：
 
@@ -112,6 +124,7 @@ PrefabExporter.Export(modDirectory,
 框架在构建运行时及 ShaderTool 后执行：
 
 ```powershell
+pwsh -File ./Tools/Sync-Manual.ps1
 ./Tools/Pack.ps1 -Output 'C:/Builds/RimUnity' -TempRoot 'C:/BuildTemp/RimUnity'
 ```
 

@@ -5,7 +5,8 @@
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
-& (Join-Path $PSScriptRoot 'Sync-Manual.ps1')
+# Packaging validates the mirror; updating source documents is a separate explicit step.
+& (Join-Path $PSScriptRoot 'Sync-Manual.ps1') -Check
 if ([string]::IsNullOrEmpty($Output)) { $Output = Join-Path $repo 'artifacts' }
 if ([string]::IsNullOrEmpty($TempRoot)) { $TempRoot = Join-Path ([IO.Path]::GetFullPath([IO.Path]::GetTempPath())) "RimUnity/Packaging-$([Guid]::NewGuid().ToString('N'))" }
 if ([string]::IsNullOrEmpty($AssemblyDirectory)) { $AssemblyDirectory = Join-Path $repo '1.7\Assemblies' }
@@ -17,7 +18,13 @@ foreach ($name in $runtimeFiles) {
     if (!(Test-Path -LiteralPath (Join-Path $AssemblyDirectory $name) -PathType Leaf)) { throw "缺少运行时产物：$name；请先执行 Tools/Build.ps1。" }
 }
 foreach ($name in $toolFiles) {
-    if (!(Test-Path -LiteralPath (Join-Path $toolDirectory $name) -PathType Leaf)) { throw "缺少离线工具产物：$name；请先编译 Source/RimUnity.ShaderTool。" }
+    if (!(Test-Path -LiteralPath (Join-Path $toolDirectory $name) -PathType Leaf)) { throw "缺少离线工具产物：$name；请先执行 Tools/Build.ps1。" }
+}
+# Check the embedded inputs before creating any archive or staging output.
+$embeddedSource = Join-Path $repo 'artifacts/Embedded'
+$embeddedFiles = @('RimUnity.Embedded.dll', 'RimUnity.Embedded.targets', 'References/RimUnity.Core.dll', 'References/RimUnity.dll', 'References/RimUnity.Spine.dll')
+foreach ($name in $embeddedFiles) {
+    if (!(Test-Path -LiteralPath (Join-Path $embeddedSource $name) -PathType Leaf)) { throw "缺少内置接入包产物：$name；请运行 Tools/Build.ps1（不要使用 -SkipEmbedded）。" }
 }
 $version = (Get-Content -LiteralPath (Join-Path $repo 'UnityPackage\package.json') -Encoding UTF8 -Raw | ConvertFrom-Json).version
 $stage = Join-Path $TempRoot ([Guid]::NewGuid().ToString('N'))
@@ -36,7 +43,6 @@ foreach ($name in $toolFiles) { Copy-Item -LiteralPath (Join-Path $toolDirectory
 $tgz = Join-Path $Output "com.chezhou.rimunity-$version.tgz"
 & tar -czf $tgz -C $stage package
 if ($LASTEXITCODE -ne 0) { throw 'UPM 包压缩失败。' }
-$embeddedSource = Join-Path $repo 'artifacts/Embedded'
 $embedded = Join-Path $stage 'RimUnity.Embedded'
 [IO.Directory]::CreateDirectory($embedded) | Out-Null
 foreach ($name in @('RimUnity.Embedded.dll','RimUnity.Embedded.targets','References')) {

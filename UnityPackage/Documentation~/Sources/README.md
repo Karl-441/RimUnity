@@ -42,10 +42,13 @@ instance.transform.position = new RimUnity.Vector3(x, y, z);
 
 ```powershell
 $env:HARMONY_PATH = 'C:\Mods\Harmony\1.7\Assemblies\0Harmony.dll'
-.\Tools\Build.ps1 -GameRoot 'C:\Games\RimWorld'
-.\Tools\Verify.ps1 -GameRoot 'C:\Games\RimWorld'
+.\Tools\Verify.ps1 -GameRoot 'C:\Games\RimWorld' -Embedded
+# 修改文档后显式更新离线镜像，再打包：
+pwsh -File .\Tools\Sync-Manual.ps1
 .\Tools\Pack.ps1 -Output 'C:\out'
 ```
+
+使用 PowerShell 7 运行这些入口。`Build.ps1` 一次构建运行时、内置接入包与 ShaderTool；`Verify.ps1` 默认调用一次构建，再检查着色器，`-Embedded` 加跑内置运行时离线测试。已有本次构建产物时可用 `-SkipBuild`，无需先 Build 再重复构建。`Pack.ps1` 只检查并打包已有产物，文档镜像不同步时失败，不会自动改写。部署单独运行 `Deploy.ps1`，游戏内测试单独运行 `Test-EmbeddedInGame.ps1`。
 
 脚本在入口统一解析路径：显式参数优先，其次环境变量 `RIMWORLD_DIR` / `HARMONY_PATH` / `UNITY_EDITOR_DIR` / `UNITY_PROJECT` / `RIMUNITY_BACKUP_DIR`，最后是脚本默认值。目录存在之外还会核对必需文件（游戏目录要含 `Assembly-CSharp.dll` 与 `Waylith.dll`；Unity Editor/Data 要含 `Managed/Newtonsoft.Json.dll` 与 UnityEngine 程序集；Unity 工程要含 UGUI/TMP 程序集），路径指错时在入口直接说明缺什么，而不是等到编译或运行时才报错。部署与升级备份默认放在游戏安装目录下的 `.rimunity-backups`（在 `Mods` 之外，不会被模组扫描读到）。
 

@@ -11,13 +11,25 @@ In Package Manager, choose **Add package from disk** and select `UnityPackage/pa
 Build from the repository root, substituting your own paths:
 
 ```powershell
-dotnet build ./Source/RimUnity/RimUnity.csproj -c Release `
-  -p:RimWorldDir='C:/Games/RimWorld' `
-  -p:HarmonyPath='C:/Mods/Harmony/1.7/Assemblies/0Harmony.dll'
-
-dotnet build ./Source/RimUnity.ShaderTool/RimUnity.ShaderTool.csproj -c Release `
-  -p:RimWorldDir='C:/Games/RimWorld'
+$env:RIMWORLD_DIR = 'C:/Games/RimWorld'
+$env:HARMONY_PATH = 'C:/Mods/Harmony/1.7/Assemblies/0Harmony.dll'
+./Tools/Build.ps1
+./Tools/Verify.ps1 -SkipBuild -Embedded
 ```
+
+Use PowerShell 7 and the .NET 10 SDK. The entry points have separate responsibilities:
+
+- `Build.ps1`: build Core, Runtime, Spine, the embedded integration package and ShaderTool. `-SkipEmbedded` builds only the runtime and tool; this is not a complete packaging build.
+- `Verify.ps1`: build once by default, then validate shaders. `-SkipBuild` checks existing outputs; `-Embedded` adds offline embedded runtime tests; `-DataRoot` adds prefab inspection. With `-SkipBuild`, embedded tests still compile temporary fixtures and test programs, but do not rebuild the release runtime or ShaderTool.
+- `Pack.ps1`: validate existing runtime, tool, embedded package and documentation mirror, then create release archives. It neither builds nor updates documentation. Run Build/Verify for the current source before packaging; file existence does not establish freshness.
+- `Deploy.ps1`: explicitly deploy the standalone mod to the game with a backup. Build, Verify and Pack do not call it.
+
+For one build-and-verify invocation, run `./Tools/Verify.ps1 -Embedded`. CI can instead run `Build.ps1` followed by `Verify.ps1 -SkipBuild -Embedded`. `Verify-Embedded.ps1` remains available separately and requires an earlier Build. Real game tests remain in `Test-EmbeddedInGame.ps1`; offline checks do not validate in-game rendering.
+
+Run `pwsh -File ./Tools/Test-BuildWorkflow.ps1` for orchestration regressions without the game or SDK. It checks ordering, build skipping, failure propagation and packaging preconditions, not compilation.
+
+Outputs: runtime assemblies in `1.7/Assemblies`, ShaderTool in `Tools/bin/ShaderTool`, embedded integration package in `artifacts/Embedded`, and release archives in `artifacts` by default. Builds overwrite the tracked Runtime/Core DLLs; exclude unintended binary changes from source commits.
+
 
 `Directory.Build.props` ships no default paths. Besides the `-p:` properties above, you can set environment variables and then call `dotnet build` directly:
 
@@ -112,10 +124,11 @@ Exit the game before replacing game-side resources. Copy your mod DLLs, the cata
 After building the runtime and ShaderTool, package the framework with:
 
 ```powershell
+pwsh -File ./Tools/Sync-Manual.ps1
 ./Tools/Pack.ps1 -Output 'C:/Builds/RimUnity' -TempRoot 'C:/BuildTemp/RimUnity'
 ```
 
-This produces a framework Mod ZIP and a UPM TGZ, including MIT and third-party license files. The framework package excludes content assets, Unity projects, caches, game assemblies and test assets. The TGZ includes the project's tool under `Tools~/ShaderTool`; it still requires a local game installation path.
+This produces a framework Mod ZIP, an embedded runtime ZIP, a UPM TGZ and SHA256SUMS.txt, including MIT and third-party license files. The framework package excludes content assets, Unity projects, caches, game assemblies and test assets. The TGZ includes the project's tool under `Tools~/ShaderTool`; it still requires a local game installation path.
 
 Package your content mod separately: its About, LoadFolders, mod DLLs, Defs and every dependency under `1.7/Data/RimUnity`. Do not copy only the latest generation, since other catalog entries may still reference earlier files.
 
