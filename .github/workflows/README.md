@@ -4,7 +4,7 @@
 
 | 文件 | 层 | 跑在哪 | 需要什么 |
 | --- | --- | --- | --- |
-| `repo-checks.yml` | 第一层 | GitHub 托管的 `windows-latest` | 无（不碰游戏、不编译） |
+| `repo-checks.yml` | 第一层 | GitHub 托管的 `windows-latest` | 不碰游戏；`global.json` 钉的 .NET 10 SDK（只给 4 个离线测试工程用） |
 | `manual-verify.yml` | 第二层 | 自托管 runner，标签 `self-hosted, windows, rimworld-1.7` | RimWorld 1.7 + Harmony + .NET 10 SDK |
 
 ---
@@ -13,7 +13,8 @@
 
 **什么时候跑**：`main` / `keep_branch` 的 `push`，以及 `pull_request`。
 
-**跑什么**：`Tools/Verify-Static.ps1` 与 `Tools/Test-BuildWorkflow.ps1`（两个 PowerShell 宿主各运行一次）。静态检查做的是不需要编译、不需要游戏的那一类检查——
+**跑什么**：`Tools/Verify-Static.ps1`、`Tools/Test-BuildWorkflow.ps1`（两个 PowerShell 宿主各运行一次）
+与 `Tools/Test-OfflineProjects.ps1`（4 个离线测试工程）。静态检查做的是不需要编译、不需要游戏的那一类检查——
 
 - 离线文档镜像（`UnityPackage/Documentation~/`）与 `sources.json` 是否与源文件一致；
 - 发布号是否单一来源（`About/About.xml`、`Source/Directory.Build.props`、`UnityPackage/package.json`）、
@@ -40,6 +41,21 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File Tools/Verify-Static.ps1 
 ```
 
 5.1 上必须带 `-ExecutionPolicy Bypass`，否则未签名的脚本会被执行策略挡下。
+
+### 离线测试工程
+
+`Tools/Test-OfflineProjects.ps1` 会编译并运行 4 个**不需要游戏、不需要 Unity** 的测试工程：
+`CatalogPolicyTests`、`MemoryAttributionTests`、`SpikeCaptureTests`、`WarmupTests`。
+
+`RenderDiagnosticsTests` 不在里面：它要 `<RimUnity.dll> <游戏目录> <0Harmony.dll>` 三个参数，
+只能在第二层跑。名单要改时同步改脚本顶部的默认参数。
+
+```powershell
+pwsh -File Tools/Test-OfflineProjects.ps1     # 本地等价命令
+```
+
+注意别给 `dotnet run` 追加 `--nologo` 这类开关——它会被当成**程序参数**传进去，
+而 `MemoryAttributionTests` 带参数时会进入需要游戏 DLL 的反射分支。
 
 ---
 
@@ -110,6 +126,7 @@ $env:HARMONY_PATH = '<创意工坊>\content\294100\2009463077\1.7\Assemblies\0Ha
 
 ## 还没接进来的
 
-- `Tools/Test-EmbeddedInGame.ps1`：需要桌面会话、会临时移动真实的 `Mods/RimUnity`，
-  而且 `-FixtureRoot` 目前只能从上一步 `Tools/Verify-Embedded.ps1` 的输出里手工取，没有自动化入口；
-- `Tools/Pack.ps1`：只在手动触发时用 `run-pack=true` 打产物，不进每次检查。
+- 第三层（游戏内）还没有 workflow job：`Tools/Test-EmbeddedInGame.ps1` 需要桌面会话、会临时移动真实的
+  `Mods/RimUnity`，而且 `-FixtureRoot` 目前只能从上一步 `Tools/Verify-Embedded.ps1` 的输出里手工取；
+- `Tools/Pack.ps1`：只在手动触发时用 `run-pack=true` 打产物，不进每次检查；
+- `manual-verify.yml` 没有 tag 触发：runner 未注册时 tag 推送只会把运行挂在队列里。
