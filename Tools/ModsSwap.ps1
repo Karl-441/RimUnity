@@ -13,8 +13,8 @@
 # createdPaths 记录本次新建的测试模组目录，修复时一并删除——只删 journal 登记过、
 # 位于 Mods 根目录下、且名字带约定前缀的路径。
 param(
-    [ValidateSet('Move', 'Repair', 'Status')][string]$Action = 'Status',
-    [string]$GameRoot = ''
+    [Alias('Action')][ValidateSet('Move', 'Repair', 'Status')][string]$SwapAction = 'Status',
+    [Alias('GameRoot')][string]$SwapGameRoot = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -231,10 +231,12 @@ function Repair-ModsSwap {
         if (-not (Test-Path -LiteralPath $live -PathType Container)) { throw "还原后 live 不存在：$live" }
         $result.RestoredOriginal = $true
     } elseif ($hasLive -and $isTestCopy) {
-        # 没有备份却只剩我们的测试副本：原模组已丢失，删掉测试副本并明确报错。
+        # 原先没有模组时只需清理测试副本；原先有模组却缺少备份时仍报错。
         Remove-ModsSwapPath -Path $live
         $result.RemovedTestCopy = $true
-        throw ("原模组的备份缺失，无法还原；已删除测试副本。请重新安装 RimUnity。journal={0}" -f $journal.__file)
+        if ($journal.state -ne 'no-original') {
+            throw ("原模组的备份缺失，无法还原；已删除测试副本。请重新安装 RimUnity。journal={0}" -f $journal.__file)
+        }
     } elseif ($journal.state -ne 'planned' -and $journal.state -ne 'no-original' -and -not $hasLive) {
         throw ("原模组备份缺失且 live 不存在，无法自动恢复；journal 保留在 {0} 供排查。" -f $journal.__file)
     }
@@ -244,12 +246,12 @@ function Repair-ModsSwap {
     return [pscustomobject]$result
 }
 
-# ---- 命令行入口（人工排查与自测脚本用）----
-if ($GameRoot) {
-    $paths = Get-ModsSwapPaths $GameRoot
-    switch ($Action) {
-        'Move'   { $r = Invoke-ModsSwapMove -GameRoot $GameRoot; Write-Output ("已移走：{0}" -f $r.Backup) }
-        'Repair' { $r = Repair-ModsSwap -GameRoot $GameRoot; Write-Output ("修复：状态={0} 还原={1} 删测试副本={2} 删测试模组={3}" -f $r.JournalState, $r.RestoredOriginal, $r.RemovedTestCopy, $r.RemovedCreated) }
+#命令行参数使用独立名称；点引用只加载函数，保留调用方的游戏目录和动作。
+if ($MyInvocation.InvocationName -ne '.' -and $SwapGameRoot) {
+    $paths = Get-ModsSwapPaths $SwapGameRoot
+    switch ($SwapAction) {
+        'Move'   { $r = Invoke-ModsSwapMove -GameRoot $SwapGameRoot; Write-Output ("已移走：{0}" -f $r.Backup) }
+        'Repair' { $r = Repair-ModsSwap -GameRoot $SwapGameRoot; Write-Output ("修复：状态={0} 还原={1} 删测试副本={2} 删测试模组={3}" -f $r.JournalState, $r.RestoredOriginal, $r.RemovedTestCopy, $r.RemovedCreated) }
         'Status' {
             $j = Read-ModsSwapJournal $paths
             if (-not $j) { Write-Output '没有未完成的交换。' }
