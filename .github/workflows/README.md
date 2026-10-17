@@ -13,8 +13,9 @@
 
 **什么时候跑**：`main` / `keep_branch` 的 `push`，以及 `pull_request`。
 
-**跑什么**：`Tools/Verify-Static.ps1`、`Tools/Test-BuildWorkflow.ps1`、`Tools/Test-ModsSwap.ps1`
-（三个都在两个 PowerShell 宿主各运行一次）与 `Tools/Test-OfflineProjects.ps1`（4 个离线测试工程）。
+**跑什么**：`Tools/Verify-Static.ps1`、`Tools/Test-BuildWorkflow.ps1`、`Tools/Test-ModsSwap.ps1`、
+`Tools/Test-VerifyStatic.ps1`（四个都在两个 PowerShell 宿主各运行一次）与 `Tools/Test-OfflineProjects.ps1`
+（4 个离线测试工程）。
 静态检查做的是不需要编译、不需要游戏的那一类检查——
 
 - 离线文档镜像（`UnityPackage/Documentation~/`）与 `sources.json` 是否与源文件一致；
@@ -79,6 +80,17 @@ pwsh -File Tools/Test-OfflineProjects.ps1     # 本地等价命令
 停在 planned、backed-up、live 是非测试副本（拒绝动别人的）、备份丢失且 live 不存在（明确报错并保留
 journal）、重复修复、只清理登记过的目录、同卷校验。
 
+### 检查器的负向自测
+
+`Tools/Test-VerifyStatic.ps1` 用 `git clone --shared` 建一个临时工作树，在里面依次改坏
+BOM / 发布号 / JSON / 盘符路径 / 冲突标记，断言 `Verify-Static.ps1` 以非零退出、且输出里出现对应规则名；
+每个用例后用 `git checkout` 还原。先跑基线：未改动的副本必须通过，否则后面的失败说明不了问题。
+
+```powershell
+pwsh -File Tools/Test-VerifyStatic.ps1            # 本地等价命令
+pwsh -File Tools/Test-VerifyStatic.ps1 -KeepClone # 保留临时副本排查
+```
+
 ---
 
 ## 第二层：`manual-verify.yml`
@@ -86,7 +98,8 @@ journal）、重复修复、只清理登记过的目录、同卷校验。
 **什么时候跑**：手动触发。runner 没注册时不要改成 `push` / `tag` 触发——任务只会在队列里堆积。
 
 ```powershell
-gh workflow run manual-verify.yml -f run-pack=true    # run-pack 可选，额外打发布产物
+gh workflow run manual-verify.yml -f run-pack=true -f run-ingame=true
+# run-pack：额外打发布产物；run-ingame：额外跑游戏内验证（真实启动游戏两次，需要桌面会话）
 gh run list --workflow=manual-verify.yml
 gh run view <run-id> --log
 ```
@@ -101,7 +114,9 @@ gh run view <run-id> --log
 3. 装 .NET 10 SDK。`Source/Directory.Build.props` 的目标框架是 `net10.0`，只有 .NET 8 SDK 会直接报
    `NETSDK1045`。
 
-**跑什么**：`Tools/Build.ps1` → `Tools/Verify.ps1 -SkipBuild -Embedded`，然后还原被构建改写的
+**跑什么**：`Tools/Build.ps1` → `Tools/Verify.ps1 -SkipBuild -Embedded`，`run-ingame=true` 时再串
+`Tools/Test-EmbeddedInGame.ps1`（夹具路径由 `Verify-Embedded.ps1` 写到
+`artifacts/verify/embedded-fixtures.txt`），然后还原被构建改写的
 两个**被跟踪**二进制（`1.7/Assemblies/RimUnity.dll`、`1.7/Assemblies/RimUnity.Core.dll`，见 `.gitignore`
 里的白名单），并断言工作区干净。`Build.ps1` 已经会经 `RimUnity.Spine.csproj` 的 `BuildEmbeddedRuntime`
 目标顺带构建内置运行时，所以不需要单独调 `Tools/Build-Embedded.ps1`。
@@ -148,7 +163,6 @@ $env:HARMONY_PATH = '<创意工坊>\content\294100\2009463077\1.7\Assemblies\0Ha
 
 ## 还没接进来的
 
-- 第三层（游戏内）还没有 workflow job：`Tools/Test-EmbeddedInGame.ps1` 需要桌面会话、会临时移动真实的
-  `Mods/RimUnity`，而且 `-FixtureRoot` 目前只能从上一步 `Tools/Verify-Embedded.ps1` 的输出里手工取；
+- 第三层由 `run-ingame` 开关接上了，但**不做自动触发**：它需要桌面会话、会真实启动游戏两次；
 - `Tools/Pack.ps1`：只在手动触发时用 `run-pack=true` 打产物，不进每次检查；
 - `manual-verify.yml` 没有 tag 触发：runner 未注册时 tag 推送只会把运行挂在队列里。

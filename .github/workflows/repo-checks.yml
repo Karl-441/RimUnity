@@ -72,6 +72,15 @@ jobs:
         shell: powershell
         run: ./Tools/Test-ModsSwap.ps1
 
+      # 检查器自己的负向自测：在临时 clone 里改坏一处，断言规则真的会失败。
+      - name: 检查器负向自测（PowerShell 7）
+        shell: pwsh
+        run: ./Tools/Test-VerifyStatic.ps1
+
+      - name: 检查器负向自测（Windows PowerShell 5.1）
+        shell: powershell
+        run: ./Tools/Test-VerifyStatic.ps1
+
       # 4 个不需要游戏、不需要 Unity 的测试工程。RenderDiagnosticsTests 需要
       # <RimUnity.dll> <游戏目录> <0Harmony.dll> 三个参数，只能在第二层跑。
       - name: 离线测试工程
