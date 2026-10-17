@@ -8,7 +8,7 @@ RimUnity is a Unity asset exporter and runtime framework for RimWorld 1.7. Creat
 
 ## Quick start
 
-**Source version: 0.1.13. Download published packages from [Releases](https://github.com/chezhou9413/RimUnity/releases). Build the source to use the loader changes before they are published.**
+**Source version: 0.1.14. Download published packages from [Releases](https://github.com/chezhou9413/RimUnity/releases). Build the source to use the loader changes before they are published.**
 
 | Integration | Usage |
 | --- | --- |

@@ -8,7 +8,7 @@ RimUnity 是面向 RimWorld 1.7 的 Unity 资源导出与运行框架。在 Unit
 
 ## 快速开始
 
-**源码版本：0.1.13。已发布安装包见 [Releases](https://github.com/chezhou9413/RimUnity/releases)；本次加载器改动发布前，请从源码构建。**
+**源码版本：0.1.14。已发布安装包见 [Releases](https://github.com/chezhou9413/RimUnity/releases)；本次加载器改动发布前，请从源码构建。**
 
 | 接入方式 | 使用方法 |
 | --- | --- |

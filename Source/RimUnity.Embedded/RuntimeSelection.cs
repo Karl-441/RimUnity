@@ -11,7 +11,6 @@ namespace RimUnity.Embedded;
 internal static class RuntimeSelection
 {
     private static readonly string[] Names = { "RimUnity.Core", "RimUnity", "RimUnity.Spine" };
-    private static bool IsStandalone(ModContentPack mod) => string.Equals(mod.PackageId, "Chezhou.RimUnity", StringComparison.OrdinalIgnoreCase);
 
     internal static void Initialize()
     {
@@ -33,7 +32,11 @@ internal static class RuntimeSelection
         string root, provider, hash = "";
         bool standalone;
         bool deferred;
-        var standaloneMod = mods.SingleOrDefault(m => IsStandalone(m) && m.assemblies.loadedAssemblies.Any(a => a.GetName().Name == "RimUnity"));
+        //以原版登记的真实程序集归属识别运行时，不依赖管理器可改写的包 ID、名称或工坊链接。
+        var runtimeOwners = mods.Where(m => m.assemblies.loadedAssemblies.Any(a => a.GetName().Name == "RimUnity")).ToArray();
+        if (runtimeOwners.Length > 1)
+            throw new InvalidOperationException("RimUnity runtime owner is ambiguous: " + string.Join(", ", runtimeOwners.Select(m => m.PackageId)));
+        var standaloneMod = runtimeOwners.SingleOrDefault();
         if (standaloneMod != null)
         {
             //独立版已由原版加载，必须共用其类型，不能再加载或替换第二套运行时。
@@ -42,11 +45,11 @@ internal static class RuntimeSelection
             var version = Version.Parse(runtime.GetCustomAttribute<AssemblyFileVersionAttribute>().Version);
             if (protocol != "1" || version < content.Minimum)
                 throw new InvalidOperationException($"独立 RimUnity 版本不兼容，请更新独立版。/ Update standalone RimUnity. Required: {content.Minimum}, installed: {version}");
-            root = Path.Combine(standaloneMod.RootDir, "1.7");
+            VerifyLoadedRuntime(standaloneMod.assemblies.loadedAssemblies);
+            root = FindRuntimeResources(standaloneMod, runtime);
             provider = standaloneMod.Name;
             standalone = true;
             deferred = false;
-            VerifyLoadedRuntime(standaloneMod.assemblies.loadedAssemblies);
         }
         else
         {
@@ -62,7 +65,7 @@ internal static class RuntimeSelection
                 if (group.Select(c => c.Payload.Hash).Distinct().Count() != 1)
                     throw new InvalidDataException("相同版本运行库载荷冲突 / Conflicting embedded payloads: " + group.Key);
             var compatible = payloads.Where(c => c.Payload.Protocol == 1 && c.Payload.Version >= content.Minimum)
-                .OrderByDescending(c => c.Payload.Version).ThenByDescending(c => IsStandalone(c.Owner))
+                .OrderByDescending(c => c.Payload.Version)
                 .ThenBy(c => c.Owner.PackageId, StringComparer.Ordinal).ToArray();
             if (compatible.Length == 0) throw new InvalidOperationException("没有兼容运行库 / No compatible embedded runtime: " + content.Minimum);
             var selected = compatible[0];
@@ -71,7 +74,7 @@ internal static class RuntimeSelection
             root = selected.Payload.Extract(Path.Combine(GenFilePaths.SaveDataFolderPath, "RimUnity", "Embedded"));
             hash = selected.Payload.Hash;
             provider = selected.Owner.Name;
-            standalone = IsStandalone(selected.Owner);
+            standalone = false;
             deferred = true;
             foreach (string name in Names)
                 selected.Owner.assemblies.loadedAssemblies.Add(Assembly.LoadFrom(Path.Combine(root, "Assemblies", name + ".dll")));
@@ -97,6 +100,19 @@ internal static class RuntimeSelection
             LoadedModManager.CreateModClasses();
         }
         Log.Message($"[RimUnity] {(standalone ? "Standalone" : "Embedded")} provider: {provider}; version: {runtime.GetCustomAttribute<AssemblyFileVersionAttribute>().Version}; candidates: {copies.Count}; payload: {hash}");
+    }
+
+    //资源必须来自该运行时的有效加载目录；散装 References 不能冒充完整独立包。
+    private static string FindRuntimeResources(ModContentPack owner, Assembly runtime)
+    {
+        string location = Path.GetFullPath(runtime.Location);
+        string root = owner.foldersToLoadDescendingOrder.OrderByDescending(f => f.Length).FirstOrDefault(folder =>
+            location.StartsWith(Path.GetFullPath(Path.Combine(folder, "Assemblies")) + Path.DirectorySeparatorChar,
+                StringComparison.OrdinalIgnoreCase));
+        if (root == null || !File.Exists(Path.Combine(root, "Defs", "RimUnityShaders.xml")) ||
+            !Directory.Exists(Path.Combine(root, "Shaders", "RimUnity")))
+            throw new InvalidDataException("RimUnity runtime resources are missing from its active load folder: " + owner.RootDir);
+        return root;
     }
 
     private static void VerifyLoadedRuntime(IEnumerable<Assembly> owned)

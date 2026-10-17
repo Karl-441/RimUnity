@@ -52,7 +52,7 @@ public static class StartupReport
         catch (Exception exception) { error = exception.ToString(); Log.Error("[EmbeddedTest] " + error); }
         var report = new { passed = error == null, error, ordinaryDll, source = RimUnity.RuntimeInfo.IsStandalone ? "standalone" : "embedded",
             version = RimUnity.RuntimeInfo.Version, provider = RimUnity.RuntimeInfo.Provider, copies = RimUnity.RuntimeInfo.EmbeddedCopies,
-            resourceRoot = RimUnity.RuntimeInfo.ResourceRoot, markers = DefDatabase<MarkerDef>.AllDefsListForReading.Select(d => new { d.defName, owner = d.modContentPack.PackageId }).ToArray() };
+            resourceRoot = RimUnity.RuntimeInfo.ResourceRoot, runtimeOwner = RimUnity.RimUnityMod.OwnContent.PackageId, markers = DefDatabase<MarkerDef>.AllDefsListForReading.Select(d => new { d.defName, owner = d.modContentPack.PackageId }).ToArray() };
         File.WriteAllText(Path.Combine(GenFilePaths.SaveDataFolderPath, "RimUnity-embedded-report.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
         Log.Message("[EmbeddedTest] " + JsonSerializer.Serialize(report));
         UnityEngine.Application.Quit();

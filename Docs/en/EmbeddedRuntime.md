@@ -1,4 +1,4 @@
-# Embedded runtime integration · 0.1.13
+# Embedded runtime integration · 0.1.14
 
 The embedded package contains the same `RimUnity.Core`, `RimUnity` and `RimUnity.Spine` assemblies and public types as the standalone mod, plus all built-in Defs, GLSL, bilingual settings text and licenses. `RimUnity.Embedded.dll` is a container and bootstrap, not a separate API. It contains no real Unity engine, game assemblies or Harmony.
 
@@ -41,6 +41,8 @@ The `.rimunity` file is the original content assembly with a different extension
 When migrating, remove old content DLLs and loose RimUnity/Core/Spine DLLs from the deployment Assemblies folder first. The targets reject stale files without deleting them. Ordinary eagerly scanned DLLs must not reference deferred assemblies either.
 
 ## Selection and loading
+
+Since 0.1.14, the provider is identified by the three loaded runtime assemblies and their shared owning content pack, with protocol and active resource folder validation. Package IDs, display names and Steam URLs are not required. Manager-renamed IDs remain supported; ambiguous ownership, mixed assemblies or missing resources report explicit errors.
 
 1. Since 0.1.13, standalone `Chezhou.RimUnity` again provides ordinary runtime DLLs under `1.7/Assemblies`, loaded by the game before dependent C# type discovery. When enabled, standalone supplies DLLs, Defs and shaders; embedded payloads cannot replace it and are not read or mounted. Standalone must meet content version requirements; update it when it does not.
 2. Without standalone, enabled mods' active load folders compete for the highest compatible embedded payload satisfying all deferred content requirements. Different payloads with the same version report a conflict; identical copies run once. Disabled mods, unrelated folders and network releases do not participate. A content mod carrying an embedded runtime cannot directly replace the standalone dependency required by ordinary DLL mods.

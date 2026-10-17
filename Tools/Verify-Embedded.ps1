@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$HarmonyPath)
+﻿param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$HarmonyPath, [string]$WorkshopRoot = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $fixtures = Join-Path ([IO.Path]::GetTempPath()) ('RimUnity/Embedded-' + [Guid]::NewGuid().ToString('N'))
@@ -14,13 +14,26 @@ if ($LASTEXITCODE -ne 0) { throw '离线验证程序编译失败。' }
 & (Join-Path $PSScriptRoot 'Copy-RuntimePackage.ps1') -Destination (Join-Path $fixtures 'Standalone')
 & dotnet build (Join-Path $PSScriptRoot 'EmbeddedTests/Fixtures/Ordinary/Ordinary.csproj') -c Release --nologo "-p:RimWorldDir=$GameRoot" "-p:FixtureRoot=$fixtures" "-p:RuntimeDirectory=$repo/1.7/Assemblies"
 if ($LASTEXITCODE -ne 0) { throw '普通 DLL 兼容夹具编译失败。' }
-foreach ($scenario in @('ordinary-standalone','ordinary-standalone-only','standalone-only','single','duplicates','reverse','standalone-first','standalone-middle','standalone-last','scale')) {
+foreach ($scenario in @('workshop-first','workshop-last','ordinary-workshop','renamed-runtime-provider','incomplete-runtime-provider','ambiguous-runtime-provider','missing-runtime-resources','ordinary-standalone','ordinary-standalone-only','standalone-only','single','duplicates','reverse','standalone-first','standalone-middle','standalone-last','scale')) {
     & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures $scenario
     if ($LASTEXITCODE -ne 0) { throw "离线验证失败：$scenario；夹具目录：$fixtures" }
 }
+if ($WorkshopRoot) {
+    if (!(Test-Path -LiteralPath (Join-Path $WorkshopRoot '1.7/Assemblies/RimUnity.dll') -PathType Leaf)) { throw '工坊测试目录缺少运行时。' }
+    #保留未启用的本地版夹具，只将工坊副本登记为活动模组。
+    Copy-Item -LiteralPath $WorkshopRoot -Destination (Join-Path $fixtures 'Workshop') -Recurse
+    foreach ($scenario in @('actual-workshop-first','actual-workshop-last','actual-workshop-ordinary')) {
+        & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures $scenario
+        if ($LASTEXITCODE -ne 0) { throw "工坊实际 DLL 验证失败：$scenario" }
+    }
+}
 #固定历史源码测试真实旧入口，而不是用新入口伪装旧版本。
-$legacyRevision = '1d10c5570219710a8f93b0edb28b8090fb34c404'
-$legacyRoot = Join-Path $fixtures 'LegacyBootstrap'
+foreach ($legacy in @(
+    @{Revision='1d10c5570219710a8f93b0edb28b8090fb34c404';Name='LegacyBootstrap';Assembly='RimUnity.Embedded.Legacy011';Version='0.1.11.0';Orders=@('legacy-first','legacy-last')},
+    @{Revision='c06c6cd3a606b94b258026d6cfc5f078e618e918';Name='DeferredBootstrap';Assembly='RimUnity.Embedded.Deferred013';Version='0.1.13.0';Orders=@('workshop-legacy-first','workshop-legacy-last')}
+)) {
+$legacyRevision = $legacy.Revision
+$legacyRoot = Join-Path $fixtures $legacy.Name
 [IO.Directory]::CreateDirectory($legacyRoot) | Out-Null
 foreach ($name in @('EmbeddedBootstrap.cs','RuntimeSelection.cs','RuntimePayload.cs','DeferredContent.cs')) {
     $source = & git -c "safe.directory=$($repo.Replace('\','/'))" -C $repo show ('{0}:Source/RimUnity.Embedded/{1}' -f $legacyRevision,$name)
@@ -31,8 +44,8 @@ $legacyProject = @"
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <AssemblyName>RimUnity.Embedded.Legacy011</AssemblyName>
-    <FileVersion>0.1.11.0</FileVersion>
+    <AssemblyName>$($legacy.Assembly)</AssemblyName>
+    <FileVersion>$($legacy.Version)</FileVersion>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>bin/</OutputPath>
   </PropertyGroup>
@@ -49,13 +62,14 @@ $legacyProject = @"
 if ($LASTEXITCODE -ne 0) { throw '历史加载器编译失败。' }
 $legacyTarget = Join-Path $fixtures 'A/1.7/Assemblies/RimUnity.Embedded.dll'
 try {
-    Copy-Item -LiteralPath (Join-Path $legacyRoot 'bin/RimUnity.Embedded.Legacy011.dll') -Destination $legacyTarget -Force
-    foreach ($order in @('legacy-first','legacy-last')) {
+    Copy-Item -LiteralPath (Join-Path $legacyRoot ("bin/" + $legacy.Assembly + ".dll")) -Destination $legacyTarget -Force
+    foreach ($order in $legacy.Orders) {
         & dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures $order
         if ($LASTEXITCODE -ne 0) { throw "历史加载器混装失败：$order" }
     }
 } finally {
     Copy-Item -LiteralPath (Join-Path $repo 'artifacts/Embedded/RimUnity.Embedded.dll') -Destination $legacyTarget -Force
+}
 }
 #提升要求超过所有候选；保留目标分支的动态最低版本计算。
 $manifest = Join-Path $fixtures 'A/1.7/Assemblies/EmbeddedFixture.Library.rimunity.json'

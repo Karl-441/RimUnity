@@ -6,8 +6,8 @@
 - `Build-Embedded.ps1`：生成内置载荷和编译引用；由运行时构建调用。
 - `Compile-Editor.ps1`：离线编译 Unity 插件源码，需要 Unity Editor 和工程路径。
 - `Verify.ps1`：构建并检查 GLSL，可额外检查指定资源目录。此入口调用 Build，不执行部署。
-- `Verify-Embedded.ps1`：离线验证版本选择、程序集身份及延迟内容加载。
-- `Test-EmbeddedInGame.ps1`：启动隔离存档目录的真实游戏测试，临时安装测试模组，结束后恢复原独立版。
+- `Verify-Embedded.ps1`：离线验证版本选择、程序集身份及延迟内容加载。可用 `-WorkshopRoot` 指定实际工坊运行时，验证本地版存在但未启用的组合。
+- `Test-EmbeddedInGame.ps1`：启动隔离存档目录的真实游戏测试，临时安装测试模组，结束后恢复原独立版。指定 `-WorkshopRoot` 时额外验证游戏实际生成的 `_steam` 副本标识。
 - `Deploy.ps1`：备份并替换游戏中的独立版。
 - `Pack.ps1`：生成独立版、内置版与 Unity UPM 发布包。
 - `Sync-Manual.ps1`：同步原始文档到 Unity 包；`-Check` 仅核对。
