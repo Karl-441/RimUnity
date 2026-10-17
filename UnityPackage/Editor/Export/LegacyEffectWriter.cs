@@ -13,8 +13,20 @@ namespace RimUnity.Editor
         internal static void Animation(UnityEngine.Animation source, ComponentData data, ValueWriter writer, string path)
         {
             if (source.animatePhysics) throw new NotSupportedException(path + "：Legacy Animation 的物理时钟模式尚未接通。");
-            if (source.cullingType != AnimationCullingType.AlwaysAnimate)
-                throw new NotSupportedException(path + "：Legacy Animation 的可见性裁剪模式尚未接通。");
+            if (source.cullingType != AnimationCullingType.AlwaysAnimate && source.cullingType != AnimationCullingType.BasedOnRenderers)
+                throw new NotSupportedException(path + "：不支持的 Legacy Animation 裁剪模式：" + source.cullingType);
+            if (source.cullingType == AnimationCullingType.BasedOnRenderers)
+                foreach (Renderer renderer in source.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (renderer is UnityEngine.ParticleSystemRenderer particles)
+                    {
+                        if (particles.renderMode == ParticleSystemRenderMode.Mesh || particles.GetComponent<ParticleSystem>().trails.enabled
+                            || particles.GetComponentInParent<Canvas>() != null)
+                            throw new NotSupportedException(path + "：Legacy Animation 的粒子可见性裁剪尚未接通网格、拖尾或Canvas。");
+                    }
+                    else if (!(renderer is UnityEngine.MeshRenderer) && !(renderer is UnityEngine.SkinnedMeshRenderer))
+                        throw new NotSupportedException(path + "：Legacy Animation 可见性裁剪尚未接通此渲染器：" + renderer.GetType().Name);
+                }
             var entries = new List<ValueData>();
             foreach (UnityEngine.AnimationState state in source)
             {
@@ -34,6 +46,7 @@ namespace RimUnity.Editor
             data.members.Add(writer.Property(source, "clip", path));
             data.members.Add(writer.Property(source, "playAutomatically", path));
             data.members.Add(writer.Property(source, "wrapMode", path));
+            data.members.Add(writer.Property(source, "cullingType", path));
             data.members.Add(Field("states", new ValueData { kind = "array", items = entries }));
         }
 

@@ -27,8 +27,7 @@ internal static partial class UguiImageRenderer
             //Unity 的效果顺序是偏移副本在前、未改动顶点在后。
             void Apply(Vector2 localOffset)
             {
-                Vector2 offset = RectTransformUtility.ToGui(entry.Canvas, entry.Rect.TransformPoint(localOffset))
-                    - RectTransformUtility.ToGui(entry.Canvas, entry.Rect.TransformPoint(Vector3.zero));
+                Vector2 offset = ToGui(localOffset) - ToGui(Vector3.zero);
                 for (int i = start; i < end; i++)
                 {
                     GuiVertex original = Vertices[i];

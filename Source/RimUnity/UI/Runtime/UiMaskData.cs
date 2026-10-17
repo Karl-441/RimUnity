@@ -37,6 +37,7 @@ internal static class UiMaskData
         if (!material.HasProperty("_UiMaskCount")) throw new NotSupportedException("UI Shader 缺少 Mask 覆盖率入口：" + material.shader.name);
         material.SetFloat("_UiMaskCount", count);
         UiMaskAtlas atlas = material.HasProperty("_UiMaskAtlas") || material.HasProperty("_UiMaskPixels") ? UiMaskAtlas.For(Current.Canvas) : null;
+        UguiProjection projection = new(Current.Canvas);
         for (int i = 0; i < count; i++)
         {
             Mask mask = masks[i]; var rect = mask.transform; Rect r = rect.rect;
@@ -48,7 +49,8 @@ internal static class UiMaskData
                 Vector2 size = r.width / r.height > ratio ? new(r.height * ratio, r.height) : new(r.width, r.width / ratio);
                 r = new Rect(r.position + Vector2.Scale(r.size - size, rect.pivot), size);
             }
-            Vector2 P(float x, float y) => RectTransformUtility.ToGui(Current.Canvas, rect.TransformPoint(new Vector3(x, y))) * Prefs.UIScale;
+            Matrix4x4 world = rect.localToWorldMatrix;
+            Vector2 P(float x, float y) => projection.ToGui(world.MultiplyPoint3x4(new Vector3(x, y))) * Prefs.UIScale;
             Matrix4x4 inverse = Homography(P(r.xMin, r.yMin), P(r.xMax, r.yMin), P(r.xMax, r.yMax), P(r.xMin, r.yMax)).inverse;
             rows[i * 7] = new Vector4(inverse.m00, inverse.m01, inverse.m03, 0);
             rows[i * 7 + 1] = new Vector4(inverse.m10, inverse.m11, inverse.m13, 0);

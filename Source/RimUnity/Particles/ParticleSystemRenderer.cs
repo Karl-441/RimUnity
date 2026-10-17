@@ -78,17 +78,18 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         if (sharedMaterial != null && renderMode != ParticleSystemRenderMode.None && system.count != 0
             && (renderMode == ParticleSystemRenderMode.Mesh || maxParticleSize > 0))
         {
+            var cameraState = new ParticleCameraState(camera, uiEntry?.Canvas, allowRoll);
             ClearMesh(); order.Clear();
             for (int i = 0; i < system.count; i++) order.Add(i);
             if (sortMode != ParticleSystemSortMode.None)
             {
                 sortingSystem = system;
-                sortingPosition = camera != null ? camera.transform.position : Vector3.zero;
-                sortingForward = camera != null ? camera.transform.forward : Vector3.forward;
+                sortingPosition = cameraState.Position;
+                sortingForward = cameraState.Forward;
                 try { order.Sort(particleComparison ??= CompareParticles); }
                 finally { sortingSystem = null; }
             }
-            DrawParticleBatches(system, camera);
+            DrawParticleBatches(system, camera, in cameraState);
         }
         if (system.trails.enabled && trailMaterial != null) DrawTrails(system, camera);
         TrimSpriteBatches();
@@ -106,7 +107,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             _ => (s.WorldPosition(y) - sortingPosition).sqrMagnitude.CompareTo((s.WorldPosition(x) - sortingPosition).sqrMagnitude)
         };
     }
-    private void AppendParticle(ParticleSystem s, ParticleSystem.Particle p, Camera camera)
+    private void AppendParticle(ParticleSystem s, ParticleSystem.Particle p, in ParticleCameraState cameraState)
     {
         particleRandom = ParticleSystem.Random(p.randomSeed, 97);
         Vector3 center = s.WorldPosition(p), size = Vector3.Scale(s.SizeAt(p), s.ParticleScale(p));
@@ -136,32 +137,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             foreach (int index in sourceTriangles) indices.Add(offset + index);
             return;
         }
-        Quaternion view = BillboardAlignment(s, p, camera);
-        Vector3 forward = camera != null ? camera.transform.forward : Vector3.forward;
-        Vector3 right = view * Vector3.right, up = view * Vector3.up;
-        if (renderMode == ParticleSystemRenderMode.HorizontalBillboard) { right = Vector3.right; up = Vector3.forward; }
-        if (renderMode == ParticleSystemRenderMode.VerticalBillboard) { up = Vector3.up; right = Vector3.Cross(up, forward).normalized; }
-        if (renderMode == ParticleSystemRenderMode.Stretch)
-        {
-            Vector3 velocity = s.WorldVelocity(p);
-            up = velocity.sqrMagnitude > .000001f ? velocity.normalized : up;
-            right = Vector3.Cross(up, forward).normalized;
-            size.y = Mathf.Abs(size.y) * lengthScale + velocity.magnitude * velocityScale;
-        }
-        float angle = p.rotation * Mathf.Deg2Rad, co = Mathf.Cos(angle), si = Mathf.Sin(angle);
-        Vector3 x = right * co - up * si, y = up * co + right * si;
-        if (p.alignedToDirection)
-        {
-            Quaternion rotation = s.ParticleRotation(p) * Quaternion.Euler(p.rotation3D);
-            x = rotation * Vector3.right; y = rotation * Vector3.up;
-        }
-        else if (s.main.startRotation3D && renderMode == ParticleSystemRenderMode.Billboard)
-        {
-            Quaternion rotation = view * Quaternion.Euler(p.rotation3D.x, p.rotation3D.y, -p.rotation3D.z);
-            x = rotation * Vector3.right; y = rotation * Vector3.up;
-        }
-        x *= size.x * .5f; y *= size.y * .5f;
-        ClampBillboardSize(center, camera, ref x, ref y);
+        BillboardAxes(s, p, in cameraState, center, size, out Vector3 x, out Vector3 y);
         streamNormal = -Vector3.Cross(x, y).normalized;
         streamTangent = new Vector4(x.normalized.x, x.normalized.y, x.normalized.z, 1);
         center += x * (pivot.x * 2) + y * (pivot.y * 2);

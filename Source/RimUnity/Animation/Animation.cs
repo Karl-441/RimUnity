@@ -10,6 +10,7 @@ public sealed class Animation : MonoBehaviour, IEnumerable
     public AnimationState[] states = Array.Empty<AnimationState>();
     public bool playAutomatically = true;
     public WrapMode wrapMode;
+    public AnimationCullingType cullingType;
     private readonly BridgeTime clock = new();
     private Animator sampler;
     public bool isPlaying => Array.Exists(states, state => state.enabled);
@@ -20,6 +21,11 @@ public sealed class Animation : MonoBehaviour, IEnumerable
     private void Update()
     {
         float dt = clock.Step(false);
+        if (!isPlaying) return;
+        //隐藏期间仍刷新时钟，重新可见时不补播被裁剪的时间。
+        if (cullingType == AnimationCullingType.BasedOnRenderers && !Rendering.AnimationVisibility.IsVisible(transform)) return;
+        if (cullingType != AnimationCullingType.AlwaysAnimate && cullingType != AnimationCullingType.BasedOnRenderers)
+            throw new NotSupportedException("不支持的 Legacy Animation 裁剪模式：" + cullingType);
         Advance(dt);
     }
 

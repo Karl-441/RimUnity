@@ -21,11 +21,11 @@ public sealed partial class ParticleSystemRenderer
     }
 
     //连续纹理段独立提交，不重排透明粒子来压低绘制调用。
-    private void DrawParticleBatches(ParticleSystem system, Camera camera)
+    private void DrawParticleBatches(ParticleSystem system, Camera camera, in ParticleCameraState cameraState)
     {
         if (!system.textureSheetAnimation.enabled || system.textureSheetAnimation.mode != ParticleSystemAnimationMode.Sprites)
         {
-            foreach (int i in order) { streamParticleIndex = i; AppendParticle(system, system.particles[i], camera); }
+            foreach (int i in order) { streamParticleIndex = i; AppendParticle(system, system.particles[i], in cameraState); }
             Submit(ref batch, sharedMaterial, camera); return;
         }
         if (spriteSource != sharedMaterial) { ReleaseSpriteBatches(); spriteSource = sharedMaterial; }
@@ -40,7 +40,7 @@ public sealed partial class ParticleSystemRenderer
             Material material = SpriteMaterial(texture);
             if (current != null && material != current) { SubmitSpriteBatch(group++, current, camera); ClearMesh(); }
             current = material;
-            streamParticleIndex = i; AppendParticle(system, particle, camera);
+            streamParticleIndex = i; AppendParticle(system, particle, in cameraState);
         }
         if (current != null) SubmitSpriteBatch(group, current, camera);
     }

@@ -8,6 +8,8 @@ namespace RimUnity.Serialization
     {
         public int formatVersion = 1;
         public string key, sourceName, profile, vertexFile, fragmentFile, descriptorFile;
+        //附加颜色 Pass 按源顺序加载，主程序仍由当前描述承载。
+        public string[] additionalPasses = Array.Empty<string>();
         public string grabTexture;
         public string geometry;
         public string depthCompare = "LessOrEqual";

@@ -91,7 +91,11 @@ public sealed partial class ParticleSystem
             var m = sizeBySpeed; float speed = SpeedPhase(p, m.range);
             size = Vector3.Scale(size, m.separateAxes ? new Vector3(m.x.Evaluate(speed, r), m.y.Evaluate(speed, r), m.z.Evaluate(speed, r)) : Vector3.one * m.size.Evaluate(speed, r));
         }
-        if (noise.enabled) size += NoiseVector(p, age) * noise.sizeAmount.Evaluate(age, r);
+        if (noise.enabled)
+        {
+            float amount = noise.sizeAmount.Evaluate(age, r);
+            if (amount != 0) size += NoiseVector(p, age) * amount;
+        }
         return size;
     }
 
@@ -107,17 +111,15 @@ public sealed partial class ParticleSystem
         return space == ParticleSystemSimulationSpace.Local ? transform.InverseTransformDirection(world) : world;
     }
 
-    //连续值噪声按八角点插值，不以每帧随机抖动代替噪声场。
+    //同一播放周期共享三维旋涡场，粒子种子只影响强度和重映射曲线。
     private Vector3 NoiseVector(Particle p, float age)
     {
         float frequency = Mathf.Max(.0001f, noise.frequency), amplitude = 1, total = 0;
         Vector3 point = p.position * frequency + Vector3.one * (elapsed * noise.scrollSpeed.Evaluate(age));
-        if (noise.quality == ParticleSystemNoiseQuality.Low) { point.y = 0; point.z = 0; }
-        else if (noise.quality == ParticleSystemNoiseQuality.Medium) point.z = 0;
         Vector3 sum = Vector3.zero;
         for (int i = 0; i < noise.octaveCount; i++)
         {
-            sum += new Vector3(ValueNoise(point, p.randomSeed), ValueNoise(point, p.randomSeed + 101), ValueNoise(point, p.randomSeed + 211)) * amplitude;
+            sum += ParticleNoise.Curl(point, randomSeed, noise.quality) * amplitude;
             total += amplitude; amplitude *= noise.octaveMultiplier; point *= noise.octaveScale;
         }
         float r = Random(p.randomSeed, 40);
@@ -128,14 +130,5 @@ public sealed partial class ParticleSystem
                 (noise.separateAxes ? noise.remapY : noise.remap).Evaluate(value.y * .5f + .5f, r),
                 (noise.separateAxes ? noise.remapZ : noise.remap).Evaluate(value.z * .5f + .5f, r));
         return Vector3.Scale(value, strength) / (noise.damping ? frequency : 1);
-    }
-    private static float ValueNoise(Vector3 p, uint seed)
-    {
-        int x = Mathf.FloorToInt(p.x), y = Mathf.FloorToInt(p.y), z = Mathf.FloorToInt(p.z);
-        float a = p.x - x, b = p.y - y, c = p.z - z;
-        a = a * a * (3 - 2 * a); b = b * b * (3 - 2 * b); c = c * c * (3 - 2 * c);
-        float H(int dx, int dy, int dz) => Random(seed, unchecked((uint)((x + dx) * 73856093 ^ (y + dy) * 19349663 ^ (z + dz) * 83492791))) * 2 - 1;
-        return Mathf.Lerp(Mathf.Lerp(Mathf.Lerp(H(0, 0, 0), H(1, 0, 0), a), Mathf.Lerp(H(0, 1, 0), H(1, 1, 0), a), b),
-            Mathf.Lerp(Mathf.Lerp(H(0, 0, 1), H(1, 0, 1), a), Mathf.Lerp(H(0, 1, 1), H(1, 1, 1), a), b), c);
     }
 }

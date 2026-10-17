@@ -39,6 +39,10 @@ public static class HostAssets
         ArgumentNullException.ThrowIfNull(source);
         if (Shaders.TryGetValue(source, out var cached)) return cached;
         var shader = UnityEngine.Shader.FromEngineShader(source.name, source.EngineShader);
+        //独立 Shader 的颜色通道也要传给宿主包装，供 Verse 绘制完整组合。
+        var passes = new Waylith.Rendering.Shader[source.passCount - 1];
+        for (int i = 1; i < source.passCount; i++) passes[i - 1] = source.Passes[i].EngineShader;
+        AccessTools.Property(typeof(UnityEngine.Shader), "ExtraPasses").SetValue(shader, passes);
         Shaders.Add(source, shader);
         Defaults.Add(shader, new Material(source));
         return shader;

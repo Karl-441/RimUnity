@@ -19,7 +19,7 @@ internal static class Program
         Console.OutputEncoding = new System.Text.UTF8Encoding(false);
         try
         {
-            if (args.Length < 3) throw new ArgumentException("用法：RimUnity.ShaderTool <gameRoot> verify <shader.glsl>... | hlsl <source.hlsl> <entry> <Vertex|Fragment> <output.glsl> | shaderlab <source.shader> <outputDir> <world|ui> [keywords逗号分隔] [pass] [Gamma|Linear] | linear <vertex.glsl> <fragment.glsl> <outputDir>");
+            if (args.Length < 3) throw new ArgumentException("用法：RimUnity.ShaderTool <gameRoot> verify <shader.glsl>... | hlsl <source.hlsl> <entry> <Vertex|Fragment> <output.glsl> | shaderlab <source.shader> <outputDir> <world|ui> [keywords逗号分隔] [pass] [Gamma|Linear] | linear <vertex.glsl> <fragment.glsl> <outputDir> | skinned <vertex.glsl> <fragment.glsl> <outputDir>");
             string root = Path.GetFullPath(args[0]);
             AssemblyLoadContext.Default.Resolving += (_, name) => Resolve(root, name);
             if (!SetDllDirectory(root)) throw new InvalidOperationException("无法设置 Slang 原生依赖目录。");
@@ -56,9 +56,9 @@ internal static class Program
             for (int i = 2; i < args.Length; i++) ShaderCompiler.Verify(args[i]);
         }
         else if (args[1] == "hlsl" && args.Length == 6) ShaderCompiler.Hlsl(args[2], args[3], args[4], args[5]);
-        else if (args[1] == "linear" && args.Length == 5)
+        else if ((args[1] == "linear" || args[1] == "skinned") && args.Length == 5)
         {
-            var (vertex, fragment) = RimUnity.Rendering.ShaderColorSpace.Convert(File.ReadAllText(args[2]), File.ReadAllText(args[3]));
+            var (vertex, fragment) = args[1] == "skinned" ? RimUnity.Rendering.SkinnedShaderProgram.Convert(File.ReadAllText(args[2]), File.ReadAllText(args[3])) : RimUnity.Rendering.ShaderColorSpace.Convert(File.ReadAllText(args[2]), File.ReadAllText(args[3]));
             Directory.CreateDirectory(args[4]);
             string vertexPath = Path.Combine(args[4], "shader.vert.glsl"), fragmentPath = Path.Combine(args[4], "shader.frag.glsl");
             File.WriteAllText(vertexPath, vertex, new System.Text.UTF8Encoding(false));

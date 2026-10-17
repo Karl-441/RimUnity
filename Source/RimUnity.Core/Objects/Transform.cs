@@ -11,9 +11,14 @@ public class Transform : Component, IEnumerable<Transform>
     private Transform parentTransform;
     private Vector3 localPos, localSize = Vector3.one;
     private Quaternion localRot = Quaternion.identity;
-    private Matrix4x4 world;
-    private bool dirty = true;
-    public bool hasChanged { get; set; } = true;
+    private Matrix4x4 world, inverseWorld;
+    private bool dirty = true, inverseDirty = true, changed = true;
+    //清除标记时确认当前矩阵，后续父级变化仍能重新标记整条路径。
+    public bool hasChanged
+    {
+        get => changed;
+        set { if (!value) _ = localToWorldMatrix; changed = value; }
+    }
     public Transform parent { get => parentTransform; set => SetParent(value); }
     public Transform root { get { Transform value = this; while (value.parent != null) value = value.parent; return value; } }
     public int childCount => Children.Count;
@@ -32,11 +37,20 @@ public class Transform : Component, IEnumerable<Transform>
     {
         get
         {
-            if (dirty) { world = Matrix4x4.TRS(localPos, localRot, localSize); if (parent != null) world = parent.localToWorldMatrix * world; dirty = false; }
+            if (dirty) { world = Matrix4x4.TRS(localPos, localRot, localSize); if (parent != null) world = parent.localToWorldMatrix * world; dirty = false; inverseDirty = true; }
             return world;
         }
     }
-    public Matrix4x4 worldToLocalMatrix => localToWorldMatrix.inverse;
+    //同一姿态的多相机、蒙皮与坐标换算共用一次求逆。
+    public Matrix4x4 worldToLocalMatrix
+    {
+        get
+        {
+            Matrix4x4 current = localToWorldMatrix;
+            if (inverseDirty) { inverseWorld = current.inverse; inverseDirty = false; }
+            return inverseWorld;
+        }
+    }
     public Transform GetChild(int index) => Children[index];
     public Transform Find(string path)
     {
@@ -98,7 +112,14 @@ public class Transform : Component, IEnumerable<Transform>
         MarkDirty();
         if (layout) Runtime.NativeRuntime.NotifyChanged(this);
     }
-    private void MarkDirty() { dirty = true; hasChanged = true; foreach (Transform child in Children) child.MarkDirty(); }
+    //已脏节点的后代也已失效，连续动画分量写入无需反复遍历骨骼子树。
+    private void MarkDirty()
+    {
+        changed = true;
+        if (dirty) return;
+        dirty = true;
+        foreach (Transform child in Children) child.MarkDirty();
+    }
     internal void Detach() { Runtime.NativeRuntime.NotifyChanged(this); parentTransform?.Children.Remove(this); parentTransform = null; }
     public IEnumerator<Transform> GetEnumerator() => Children.GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();

@@ -7,11 +7,15 @@ internal static partial class UguiTextRenderer
     private static UguiRuntime.Entry localEntry;
     private static Rect localRect;
     private static bool localClip;
+    private static UguiProjection localProjection;
+    private static Matrix4x4 localWorldMatrix;
     internal static void DrawLocal(UguiRuntime.Entry entry, RimUnity.UI.Text text, Color tint)
     {
         Material previous = text.material;
         localEntry = entry; localRect = text is Text custom ? custom.ContentRect : entry.Rect.rect;
         localClip = text is not Text { clipText: false };
+        localProjection = new UguiProjection(entry.Canvas);
+        localWorldMatrix = entry.Rect.localToWorldMatrix;
         text.material ??= UiMaskData.DefaultMaterial();
         try
         {
@@ -21,5 +25,5 @@ internal static partial class UguiTextRenderer
         finally { localEntry = null; text.material = previous; }
     }
     private static Vector2 LocalPosition(Vector2 point)
-        => localEntry == null ? point : RectTransformUtility.ToGui(localEntry.Canvas, localEntry.Rect.TransformPoint(new Vector2(localRect.xMin + point.x, localRect.yMax - point.y)));
+        => localEntry == null ? point : localProjection.ToGui(localWorldMatrix.MultiplyPoint3x4(new Vector3(localRect.xMin + point.x, localRect.yMax - point.y)));
 }

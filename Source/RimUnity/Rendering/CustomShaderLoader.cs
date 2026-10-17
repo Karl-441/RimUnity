@@ -21,6 +21,21 @@ internal static class CustomShaderLoader
         return shader;
     }
 
+    //组合使用独立的资源身份，避免覆盖单 Pass 材质共享的 Shader 对象。
+    private static RimUnity.Shader RestorePasses(AssetCatalog catalog, ShaderData data, RimUnity.Shader shader)
+    {
+        if (data.additionalPasses.Length == 0) return shader;
+        var passes = new RimUnity.Shader[data.additionalPasses.Length + 1];
+        passes[0] = shader;
+        for (int i = 0; i < data.additionalPasses.Length; i++)
+        {
+            passes[i + 1] = (RimUnity.Shader)catalog.Get(data.additionalPasses[i]);
+            if (passes[i + 1].passCount != 1) throw new InvalidDataException("附加 Shader Pass 不能嵌套组合：" + data.sourceName);
+        }
+        shader.SetPasses(passes);
+        return shader;
+    }
+
     internal static RimUnity.Shader Load(AssetCatalog catalog, AssetRecord record)
     {
         ShaderData data = catalog.Read<ShaderData>(record.file);
@@ -28,7 +43,7 @@ internal static class CustomShaderLoader
         ShaderMaterialDefaults.Register(data.key, data.defaults);
         //资源键包含 packageId 的点号；宿主的路径回退会把它当扩展名截断，只接受完整键命中。
         if (ShaderRegistry.TryResolve(data.key, out var cached) && string.Equals(cached.Key, data.key, StringComparison.Ordinal))
-            return Wrap(data, cached);
+            return RestorePasses(catalog, data, Wrap(data, cached));
         string vertexPath = catalog.Resolve(data.vertexFile), fragmentPath = catalog.Resolve(data.fragmentFile);
         string vertex = File.ReadAllText(vertexPath), fragment = File.ReadAllText(fragmentPath);
         ShaderBindingValidation.Validate(vertex, fragment);
@@ -65,6 +80,6 @@ internal static class CustomShaderLoader
         foreach (string approximation in data.approximations)
             if (!LinearShaderVariants.TryGet(shader, out _) || !approximation.StartsWith("程序按 Linear 计算后编码到宿主 UNorm 场景", StringComparison.Ordinal))
                 Verse.Log.Warning("[RimUnity] " + data.sourceName + "：" + approximation);
-        return Wrap(data, shader);
+        return RestorePasses(catalog, data, Wrap(data, shader));
     }
 }

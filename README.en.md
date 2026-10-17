@@ -8,7 +8,7 @@ RimUnity is a Unity asset exporter and runtime framework for RimWorld 1.7. Creat
 
 ## Quick start
 
-**Source version: 0.1.14. Download published packages from [Releases](https://github.com/chezhou9413/RimUnity/releases). Build the source to use the loader changes before they are published.**
+**Current version: 0.1.14. Download the standalone mod, embedded runtime and Unity exporter from [Releases](https://github.com/chezhou9413/RimUnity/releases/tag/v0.1.14).**
 
 | Integration | Usage |
 | --- | --- |
@@ -17,7 +17,7 @@ RimUnity is a Unity asset exporter and runtime framework for RimWorld 1.7. Creat
 
 **Both modes require Harmony.** Since 0.1.13, standalone runtime DLLs load early again to support ordinary C# mods. Enabled standalone always supplies the runtime; dependent mods load after it. Without standalone, the highest compatible embedded version satisfying content requirements wins. References are compile-only. Selection works offline without automatic updates.
 
-RimUnity provides compatibility APIs on Waylith and **does not include or load a separate, real Unity engine**. Version 0.1.11 supports particle size limits, corrects trail facing and provides rectangular geometry for dynamic FullRect sprites. See the [release notes](Docs/en/Release-0.1.11.md).
+RimUnity provides compatibility APIs on Waylith and **does not include or load a separate, real Unity engine**. Version 0.1.14 improves animation binding, skinning with custom materials, particle and UI rendering, and standalone/embedded runtime loading. See the [release notes](Docs/en/Release-0.1.14.md).
 
 Players only need Harmony, RimUnity and the relevant content mod; the Unity Editor is not required. Asset authors should start with [installing the exporter and exporting a first prefab](Docs/en/ExporterSetup.md).
 

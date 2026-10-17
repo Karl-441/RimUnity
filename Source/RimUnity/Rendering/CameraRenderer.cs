@@ -8,6 +8,7 @@ namespace RimUnity.Rendering;
 internal static class CameraRenderer
 {
     private static readonly List<MeshDrawCommand> Commands = new();
+    private static readonly List<(MeshDrawCommand command, int queue, int order)> OrderedCommands = new();
     private static bool rendering;
     internal static void Render(Camera camera, bool uiOnly = false)
     {
@@ -36,21 +37,45 @@ internal static class CameraRenderer
             });
             bool composite = uiOnly || camera.targetTexture == null;
             if (composite) ScreenCameraMaterials.Prepare(Commands);
+            if (!uiOnly) SortSceneCommands();
             var view = Matrix4x4.ToNumerics(camera.worldToCameraMatrix);
             var projection = Matrix4x4.ToNumerics(camera.projectionMatrix);
             var viewport = camera.rect;
             var color = camera.backgroundColor;
             if (composite) { color.r *= color.a; color.g *= color.a; color.b *= color.a; }
+            target.PrepareCapture();
             renderer.Render(target.CaptureTarget, Commands, new CameraView(view, projection, projection * view, camera.cullingMask),
                 new UnityEngine.Rect(viewport.x, viewport.y, viewport.width, viewport.height),
                 camera.clearFlags == CameraClearFlags.SolidColor ? new UnityEngine.Color(color.r, color.g, color.b, color.a) : null);
             target.Resolve();
+            if (!uiOnly) AnimationVisibility.RecordRender(camera);
         }
         finally
         {
-            Commands.Clear(); rendering = false;
+            Commands.Clear(); OrderedCommands.Clear(); rendering = false;
             ShaderGlobals.UpdateMapLighting();
             if (Camera.main != null) ShaderGlobals.SetCamera(Camera.main);
         }
+    }
+
+    //宿主即时捕获不排序；场景先画低队列，同队列保留原来的对象和多 Pass 顺序。
+    private static void SortSceneCommands()
+    {
+        OrderedCommands.Clear();
+        for (int i = 0; i < Commands.Count; i++)
+        {
+            MeshDrawCommand command = Commands[i];
+            int queue = command.RenderQueueOverride > 0 ? command.RenderQueueOverride : command.Material.RenderQueue;
+            var grab = command.Material.Shader.SceneGrab;
+            if (grab != null && queue < grab.Queue) queue = grab.Queue;
+            OrderedCommands.Add((command, queue, i));
+        }
+        OrderedCommands.Sort(static (a, b) =>
+        {
+            int comparison = a.queue.CompareTo(b.queue);
+            return comparison != 0 ? comparison : a.order.CompareTo(b.order);
+        });
+        for (int i = 0; i < Commands.Count; i++) Commands[i] = OrderedCommands[i].command;
+        OrderedCommands.Clear();
     }
 }

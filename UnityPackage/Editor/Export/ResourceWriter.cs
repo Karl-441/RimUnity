@@ -51,9 +51,7 @@ namespace RimUnity.Editor
                 var defaults = new Material((Shader)context.ExportAsset);
                 try
                 {
-                    int[] colorPasses = Enumerable.Range(0, defaults.passCount).Where(p => !MaterialWriter.IsShadowPass(defaults, p)).ToArray();
-                    if (colorPasses.Length != 1) throw new NotSupportedException(path + "：独立 Shader 需要一个颜色 Pass；多 Pass 请导出材质资源。");
-                    string shaderId = AddShader(defaults, ui, path, colorPasses[0], true);
+                    string shaderId = AddStandaloneShader(defaults, ui, cameraUi, path);
                     standaloneShaders.Add(sourceKey, shaderId);
                     context.ResourceId = shaderId;
                     context.OutputFile = Path.Combine(directory, Path.GetFileName(records[shaderId].file));
@@ -84,14 +82,14 @@ namespace RimUnity.Editor
 
         private string WriteResource(Object asset, string path, string id, string sourcePath, bool ui, bool cameraUi)
         {
-            //Copies have no AssetDatabase path; replacements may be persistent assets.
+            //临时副本没有资产路径，替代资源仍可能是工程中的持久资产。
             string inputPath = AssetDatabase.GetAssetPath(asset);
             if (string.IsNullOrEmpty(inputPath)) inputPath = sourcePath;
             Begin();
             try
             {
                 var writer = new ValueWriter(new Dictionary<Object, string>(), this);
-                var data = new ResourceData { name = asset.name };
+                var data = new ResourceData { name = asset.name, colorSpace = QualitySettings.activeColorSpace.ToString() };
                 void Put(string key, object value) => data.members.Add(new MemberData { name = key, property = true, value = writer.Write(value, path + "." + key) });
                 if (asset is TextAsset text)
                 {
@@ -160,6 +158,7 @@ namespace RimUnity.Editor
                     Put("readable", texture.isReadable);
                     if (numeric) { Put("numericFormat", "RGBAFloatLE"); Put("width", texture.width); Put("height", texture.height); }
                     Put("wrapMode", texture.wrapMode); Put("filterMode", texture.filterMode);
+                    Put("anisoLevel", texture.anisoLevel); Put("mipMapBias", texture.mipMapBias);
                 }
                 else if (asset is UnityEngine.U2D.SpriteAtlas atlas)
                 {

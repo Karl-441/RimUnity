@@ -41,6 +41,20 @@ internal static class UguiDirty
         finally { RebuildDepth--; }
     }
 
+    //滚动条驱动的锚点只改变手柄子树，不使所在画布和列表重新布局。
+    internal static void SetScrollbarAnchors(RectTransform handle, Vector2 min, Vector2 max)
+    {
+        if (handle.anchorMin.Equals(min) && handle.anchorMax.Equals(max)) return;
+        RebuildDepth++;
+        try
+        {
+            handle.anchorMin = min;
+            handle.anchorMax = max;
+            UguiLayout.Rebuild(handle);
+        }
+        finally { RebuildDepth--; }
+    }
+
     //当前矩形和所有已缓存祖先都可能依赖该布局尺寸。
     internal static void Mark(Transform transform)
     {

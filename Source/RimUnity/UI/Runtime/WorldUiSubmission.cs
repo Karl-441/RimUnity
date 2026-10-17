@@ -68,7 +68,13 @@ internal static class WorldUiSubmission
             }
         }
         if (source != null) batch.material.CopyPropertiesFromMaterial(source);
-        else { batch.material.SetColor("_Color", Color.white); batch.material.SetVector("_MainTex_ST", new Vector4(1, 1, 0, 0)); }
+        else
+        {
+            //批次按绘制位置复用，普通图片不能继承前一控件的纸张或白幕队列。
+            batch.material.renderQueue = batch.material.shader.renderQueue;
+            batch.material.SetColor("_Color", Color.white);
+            batch.material.SetVector("_MainTex_ST", new Vector4(1, 1, 0, 0));
+        }
         batch.material.mainTexture = texture ?? Texture2D.whiteTexture;
         UiMaskData.Apply(batch.material);
         Camera camera = root.worldCamera != null ? root.worldCamera : Camera.main;

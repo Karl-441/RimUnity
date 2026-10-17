@@ -18,6 +18,7 @@
     <Compile Include="../../UnityPackage/Runtime/Serialization/*.cs" Link="Serialization/%(Filename)%(Extension)" />
     <Compile Include="../Shared/ShaderColorSpace.cs" Link="Rendering/ShaderColorSpace.cs" />
     <Compile Include="../Shared/ShaderStorageLayout.cs" Link="Rendering/ShaderStorageLayout.cs" />
+    <Compile Include="../Shared/SkinnedShaderProgram.cs" Link="Rendering/SkinnedShaderProgram.cs" />
     <Compile Include="../Shared/ShaderBindingValidation.cs" Link="Rendering/ShaderBindingValidation.cs" />
   </ItemGroup>
 </Project>

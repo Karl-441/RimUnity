@@ -40,10 +40,11 @@ public sealed partial class ParticleSystemRenderer
         }
         material.CopyPropertiesFromMaterial(source);
         guiVertices.Clear();
+        var projection = new UguiProjection(uiEntry.Canvas);
         foreach (int i in indices)
         {
             Color color = colors[i]; color.a *= uiEntry.Alpha;
-            guiVertices.Add(new GuiVertex { position = RectTransformUtility.ToGui(uiEntry.Canvas, vertices[i]), uv = uv[i], color = color });
+            guiVertices.Add(new GuiVertex { position = projection.ToGui(vertices[i]), uv = uv[i], color = color });
         }
         UiMeshSubmission.Draw(CollectionsMarshal.AsSpan(guiVertices), source.mainTexture, material);
     }

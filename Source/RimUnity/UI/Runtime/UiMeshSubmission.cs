@@ -26,8 +26,8 @@ internal static class UiMeshSubmission
     internal static void Draw(ReadOnlySpan<GuiVertex> vertices, Texture texture, Material material)
     {
         if (vertices.Length == 0) return;
-        material = UiMaskData.Apply(material);
         if (WorldUiSubmission.Current != null) { WorldUiSubmission.Draw(vertices, texture, material); return; }
+        material = UiMaskData.Apply(material);
         if (!NativeGuiHost.CanDraw) return;
         texture ??= Texture2D.whiteTexture;
         var tex = NativeGuiHost.TextureReference(texture);

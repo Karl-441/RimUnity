@@ -159,6 +159,8 @@ namespace RimUnity.Editor
             else if (component is MonoBehaviour && !original.StartsWith("UnityEngine.", StringComparison.Ordinal) && !original.StartsWith("TMPro.", StringComparison.Ordinal))
                 data.members = writer.Fields(component, path);
             else throw new NotSupportedException(path + "：组件尚未实现：" + original);
+            if (component is Animator boundAnimator)
+                AnimatorBindingWriter.Write(boundAnimator, data, writer, path);
             return data;
         }
 

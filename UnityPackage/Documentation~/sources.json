@@ -96,6 +96,12 @@
     "category": "原文·English"
   },
   {
+    "title": "0.1.14 release notes · Docs/en/Release-0.1.14.md",
+    "source": "Docs/en/Release-0.1.14.md",
+    "file": "Sources/Docs/en/Release-0.1.14.md",
+    "category": "原文·English"
+  },
+  {
     "title": "0.1.9 Preview · Validation scope · Docs/en/Release-0.1.9.md",
     "source": "Docs/en/Release-0.1.9.md",
     "file": "Sources/Docs/en/Release-0.1.9.md",
@@ -231,6 +237,12 @@
     "title": "0.1.11 正式版 · 更新说明 · Docs/zh-CN/Release-0.1.11.md",
     "source": "Docs/zh-CN/Release-0.1.11.md",
     "file": "Sources/Docs/zh-CN/Release-0.1.11.md",
+    "category": "原文·中文"
+  },
+  {
+    "title": "0.1.14 正式版 · 更新说明 · Docs/zh-CN/Release-0.1.14.md",
+    "source": "Docs/zh-CN/Release-0.1.14.md",
+    "file": "Sources/Docs/zh-CN/Release-0.1.14.md",
     "category": "原文·中文"
   },
   {

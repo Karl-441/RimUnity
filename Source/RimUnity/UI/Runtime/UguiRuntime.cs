@@ -26,6 +26,7 @@ internal static partial class UguiRuntime
     internal static readonly List<Entry> Entries = new();
     internal static int PreparationVersion { get; private set; }
     private static readonly HashSet<Graphic> WarnedGraphics = new();
+    private static readonly List<Graphic> CollectedGraphics = new();
 
     //登记场景实例；资源模板不会进入绘制列表。
     internal static void Register(Canvas canvas)
@@ -48,86 +49,79 @@ internal static partial class UguiRuntime
             canvas.Prepare();
             UguiDirty.EnsureLayout((RectTransform)canvas.transform);
             GraphicRaycaster raycaster = canvas.GetComponent<GraphicRaycaster>();
-            Collect(canvas, (RectTransform)canvas.transform, 1f, raycaster != null && raycaster.enabled, new Rect(0, 0, Screen.width / Prefs.UIScale, Screen.height / Prefs.UIScale));
-        }
-        for (int i = 0; i < Entries.Count; i++)
-        {
-            var entry = Entries[i]; entry.Order = i;
-            List<Mask> masks = null;
-            List<RectMask2D> rectMasks = null;
-            for (Transform t = entry.Particles != null ? entry.Particles.transform.parent : entry.Rect.parent; t != null; t = t.parent)
-            {
-                var mask = t.GetComponent<Mask>(); if (mask != null && mask.MaskEnabled()) (masks ??= new()).Add(mask);
-                var rectangle = t.GetComponent<RectMask2D>(); if (rectangle != null && rectangle.isActiveAndEnabled) (rectMasks ??= new()).Add(rectangle);
-            }
-            entry.Masks = masks?.ToArray() ?? System.Array.Empty<Mask>();
-            entry.RectMasks = rectMasks?.ToArray() ?? System.Array.Empty<RectMask2D>();
+            Collect(canvas, (RectTransform)canvas.transform, 1f, raycaster != null && raycaster.enabled,
+                new Rect(0, 0, Screen.width / Prefs.UIScale, Screen.height / Prefs.UIScale), new UguiProjection(canvas),
+                CollectContext.FromAncestors(canvas.transform.parent));
         }
         Entries.Sort((a, b) => a.Canvas.EffectiveOrder != b.Canvas.EffectiveOrder ? a.Canvas.EffectiveOrder.CompareTo(b.Canvas.EffectiveOrder) : a.Order.CompareTo(b.Order));
     }
 
     //以层级顺序收集图形，让后绘制元素先接收命中。
-    private static void Collect(Canvas canvas, RectTransform rect, float alpha, bool raycast, Rect clip)
+    private static void Collect(Canvas canvas, RectTransform rect, float alpha, bool raycast, Rect clip, UguiProjection projection, CollectContext context)
     {
         if (!rect.gameObject.activeInHierarchy) return;
         Canvas nested = rect.GetComponent<Canvas>();
-        if (nested != null && nested != canvas && nested.isActiveAndEnabled) { nested.Prepare(); canvas = nested; }
+        if (nested != null && nested != canvas && nested.isActiveAndEnabled)
+        {
+            nested.Prepare(); canvas = nested; projection = new UguiProjection(canvas);
+        }
         CanvasGroup group = rect.GetComponent<CanvasGroup>();
         if (group != null && group.enabled)
         {
             alpha *= group.alpha;
         }
+        context = context.WithGroup(group);
         Mask stencil = rect.GetComponent<Mask>();
-        foreach (Graphic graphic in rect.GetComponents<Graphic>())
+        //先处理当前节点，再递归子节点；查询列表可以共用而无需逐节点分配数组。
+        rect.GetComponents(CollectedGraphics);
+        foreach (Graphic graphic in CollectedGraphics)
         {
             if (!graphic.enabled || (stencil != null && stencil.MaskEnabled() && !stencil.showMaskGraphic)) continue;
-            var entry = new Entry(canvas, rect, graphic, alpha, raycast && graphic.raycastTarget, clip);
-            if (!IntersectsClip(entry)) continue;
-            if (entry.Raycast && !GroupsAllowRaycast(rect)) entry = entry with { Raycast = false };
-            Entries.Add(entry);
+            if (!IntersectsClip(projection, rect, graphic, clip)) continue;
+            bool acceptsRaycast = raycast && graphic.raycastTarget && context.GroupsAllowRaycast;
+            Entries.Add(CreateEntry(canvas, rect, graphic, alpha, acceptsRaycast, clip, context));
         }
+        CollectedGraphics.Clear();
         var particles = rect.GetComponent<ParticleSystem>();
-        if (particles != null && particles.enabled) Entries.Add(new Entry(canvas, rect, null, alpha, false, clip) { Particles = particles });
+        if (particles != null && particles.enabled)
+        {
+            Entry entry = CreateEntry(canvas, rect, null, alpha, false, clip, context);
+            entry.Particles = particles; Entries.Add(entry);
+        }
         //Mask 的包围矩形只用于粗裁剪，圆角和透明像素仍由原来的遮罩处理。
         if (stencil != null && stencil.MaskEnabled())
-            clip = IntersectClip(clip, Bounds(new Entry(canvas, rect, null, 1, false, clip)));
+            clip = IntersectClip(clip, projection.Bounds(rect, rect.rect));
         RectMask2D mask = rect.GetComponent<RectMask2D>();
         if (mask != null && mask.enabled)
         {
             Rect local = rect.rect;
             local.xMin += mask.padding.x; local.yMin += mask.padding.y; local.xMax -= mask.padding.z; local.yMax -= mask.padding.w;
-            Rect r = Bounds(new Entry(canvas, rect, null, 1, false, clip), local);
+            Rect r = projection.Bounds(rect, local);
             clip = Rect.MinMaxRect(Mathf.Max(clip.xMin, r.xMin), Mathf.Max(clip.yMin, r.yMin), Mathf.Min(clip.xMax, r.xMax), Mathf.Min(clip.yMax, r.yMax));
         }
+        context = context.WithMasks(stencil, mask);
         for (int i = 0; i < rect.childCount; i++)
-            if (rect.GetChild(i) is RectTransform child) Collect(canvas, child, alpha, raycast, clip);
-            else CollectTransform(canvas, rect.GetChild(i), rect, alpha, raycast, clip);
+            if (rect.GetChild(i) is RectTransform child) Collect(canvas, child, alpha, raycast, clip, projection, context);
+            else CollectTransform(canvas, rect.GetChild(i), rect, alpha, raycast, clip, projection, context);
     }
 
     //普通 Transform 的粒子节点也保留层级顺序，不要求作者替换成 RectTransform。
-    private static void CollectTransform(Canvas canvas, Transform node, RectTransform parentRect, float alpha, bool raycast, Rect clip)
+    private static void CollectTransform(Canvas canvas, Transform node, RectTransform parentRect, float alpha, bool raycast, Rect clip, UguiProjection projection, CollectContext context)
     {
         if (!node.gameObject.activeInHierarchy) return;
         CanvasGroup group = node.GetComponent<CanvasGroup>();
         if (group != null && group.enabled) alpha *= group.alpha;
+        context = context.WithGroup(group);
         var particles = node.GetComponent<ParticleSystem>();
-        if (particles != null && particles.enabled) Entries.Add(new Entry(canvas, parentRect, null, alpha, false, clip) { Particles = particles });
-        for (int i = 0; i < node.childCount; i++)
-            if (node.GetChild(i) is RectTransform rect) Collect(canvas, rect, alpha, raycast, clip);
-            else CollectTransform(canvas, node.GetChild(i), parentRect, alpha, raycast, clip);
-    }
-
-    //射线规则从当前对象向上查找，ignoreParentGroups 只终止父组的过滤。
-    private static bool GroupsAllowRaycast(Transform rect)
-    {
-        for (Transform t = rect; t != null; t = t.parent)
+        if (particles != null && particles.enabled)
         {
-            CanvasGroup group = t.GetComponent<CanvasGroup>();
-            if (group == null || !group.enabled) continue;
-            if (!group.blocksRaycasts) return false;
-            if (group.ignoreParentGroups) break;
+            Entry entry = CreateEntry(canvas, parentRect, null, alpha, false, clip, context);
+            entry.Particles = particles; Entries.Add(entry);
         }
-        return true;
+        context = context.WithMasks(node.GetComponent<Mask>(), node.GetComponent<RectMask2D>());
+        for (int i = 0; i < node.childCount; i++)
+            if (node.GetChild(i) is RectTransform rect) Collect(canvas, rect, alpha, raycast, clip, projection, context);
+            else CollectTransform(canvas, node.GetChild(i), parentRect, alpha, raycast, clip, projection, context);
     }
 
     //绘制只发生在 Repaint，所有全局 GUI 状态由 finally 恢复。
@@ -215,14 +209,7 @@ internal static partial class UguiRuntime
 
     //文字排版矩形与 Graphic 命中矩形分别换算，边距不扩大鼠标点击区域。
     internal static Rect Bounds(Entry entry, Rect rect)
-    {
-        Vector2 a = RectTransformUtility.ToGui(entry.Canvas, entry.Rect.TransformPoint(new Vector3(rect.xMin, rect.yMin)));
-        Vector2 b = RectTransformUtility.ToGui(entry.Canvas, entry.Rect.TransformPoint(new Vector3(rect.xMax, rect.yMax)));
-        Vector2 c = RectTransformUtility.ToGui(entry.Canvas, entry.Rect.TransformPoint(new Vector3(rect.xMin, rect.yMax)));
-        Vector2 d = RectTransformUtility.ToGui(entry.Canvas, entry.Rect.TransformPoint(new Vector3(rect.xMax, rect.yMin)));
-        return Rect.MinMaxRect(Mathf.Min(Mathf.Min(a.x, b.x), Mathf.Min(c.x, d.x)), Mathf.Min(Mathf.Min(a.y, b.y), Mathf.Min(c.y, d.y)),
-            Mathf.Max(Mathf.Max(a.x, b.x), Mathf.Max(c.x, d.x)), Mathf.Max(Mathf.Max(a.y, b.y), Mathf.Max(c.y, d.y)));
-    }
+        => new UguiProjection(entry.Canvas).Bounds(entry.Rect, rect);
 
     //只在当前鼠标位于有效 Graphic 的矩形内时命中，包括透明拖动层。
     internal static bool Contains(Entry entry, Vector2 point)

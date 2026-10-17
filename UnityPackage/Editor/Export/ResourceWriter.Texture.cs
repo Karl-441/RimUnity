@@ -15,6 +15,9 @@ namespace RimUnity.Editor
         //在编辑器完成方向转换和压缩，游戏直接上传完整 mip 链。
         private static byte[] GpuTextureBytes(Texture2D source, bool linear)
         {
+            if (source.isReadable && CanPreserveBlocks(source)) return OriginalBlockTextureBytes(source);
+            Debug.LogWarning("[RimUnity] " + AssetDatabase.GetAssetPath(source)
+                + "：该贴图仍使用 GPU 读回并重新压缩，原始 mip 与压缩块不能保证无损保留；可读 DXT1/DXT5 使用原块路径。");
             var staging = new Texture2D(source.width, source.height, TextureFormat.RGBA32, source.mipmapCount > 1, linear);
             try
             {
@@ -52,6 +55,38 @@ namespace RimUnity.Editor
                 return output.ToArray();
             }
             finally { UnityEngine.Object.DestroyImmediate(staging); }
+        }
+
+        //逐级确认块翻转条件，不能把非整块 mip 当作整块图像处理。
+        private static bool CanPreserveBlocks(Texture2D source)
+        {
+            for (int mip = 0; mip < source.mipmapCount; mip++)
+                if (!BlockTextureRows.Supports((int)source.format, Math.Max(1, source.height >> mip))) return false;
+            return true;
+        }
+
+        //可读 DXT 资产直接保存全部原始 mip，不解码重压，也不从最高分辨率重新生成。
+        private static byte[] OriginalBlockTextureBytes(Texture2D source)
+        {
+            byte[] payload = source.GetRawTextureData();
+            bool opaque = true;
+            foreach (Color32 pixel in source.GetPixels32(0)) if (pixel.a != 255) { opaque = false; break; }
+            using var output = new MemoryStream();
+            using var writer = new BinaryWriter(output);
+            writer.Write(0x58545552u); writer.Write(1); writer.Write((int)source.format);
+            writer.Write(source.width); writer.Write(source.height); writer.Write(source.mipmapCount); writer.Write(opaque);
+            int offset = 0, block = source.format == TextureFormat.DXT1 ? 8 : 16;
+            for (int mip = 0; mip < source.mipmapCount; mip++)
+            {
+                int width = Math.Max(1, source.width >> mip), height = Math.Max(1, source.height >> mip);
+                int count = checked(((width + 3) / 4) * ((height + 3) / 4) * block);
+                if (count > payload.Length - offset) throw new InvalidDataException("原始 DXT mip 载荷不完整：" + source.name);
+                var level = new byte[count]; Buffer.BlockCopy(payload, offset, level, 0, count); offset += count;
+                byte[] flipped = BlockTextureRows.Flip(level, width, height, (int)source.format);
+                writer.Write(flipped.Length); writer.Write(flipped);
+            }
+            if (offset != payload.Length) throw new InvalidDataException("原始 DXT mip 载荷包含多余数据：" + source.name);
+            return output.ToArray();
         }
     }
 }

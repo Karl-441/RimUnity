@@ -13,6 +13,8 @@ public sealed partial class Animator : MonoBehaviour
     public float speed { get; set; } = 1;
     public AnimatorUpdateMode updateMode { get; set; }
     public bool fireEvents { get; set; } = true;
+    //导出控制器的 Generic Avatar 路径由 Unity 编辑器解析为预制体内引用。
+    public AnimatorBinding[] avatarBindings = Array.Empty<AnimatorBinding>();
     public int layerCount => playback.Length;
     public AnimatorControllerParameter[] parameters => controller?.parameters ?? Array.Empty<AnimatorControllerParameter>();
     public RuntimeAnimatorController runtimeAnimatorController { get => controller; set { controller = value; Rebind(); } }

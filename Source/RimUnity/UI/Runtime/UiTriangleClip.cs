@@ -12,11 +12,25 @@ internal static class UiTriangleClip
         target.Clear();
         for (int i = 0; i + 2 < source.Length; i += 3)
         {
+            int first = Outside(source[i].position, clip), second = Outside(source[i + 1].position, clip), third = Outside(source[i + 2].position, clip);
+            //完全在视口内的三角形直接复制，同侧越界的三角形直接丢弃。
+            if ((first | second | third) == 0)
+            {
+                target.Add(source[i]); target.Add(source[i + 1]); target.Add(source[i + 2]);
+                continue;
+            }
+            if ((first & second & third) != 0) continue;
             a.Clear(); a.Add(source[i]); a.Add(source[i + 1]); a.Add(source[i + 2]);
             Cut(0, clip.xMin, true); Cut(0, clip.xMax, false); Cut(1, clip.yMin, true); Cut(1, clip.yMax, false);
             for (int j = 1; j + 1 < a.Count; j++) { target.Add(a[0]); target.Add(a[j]); target.Add(a[j + 1]); }
         }
     }
+
+    //边界点保留，与逐边裁切使用相同的包含规则。
+    private static int Outside(Vector2 point, Rect clip)
+        => (point.x < clip.xMin ? 1 : 0) | (point.x > clip.xMax ? 2 : 0) |
+            (point.y < clip.yMin ? 4 : 0) | (point.y > clip.yMax ? 8 : 0);
+
     private static void Cut(int axis, float edge, bool minimum)
     {
         b.Clear(); if (a.Count == 0) return;

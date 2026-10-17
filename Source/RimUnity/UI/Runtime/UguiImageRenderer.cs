@@ -8,10 +8,23 @@ namespace RimUnity.UI.Runtime;
 internal static partial class UguiImageRenderer
 {
     private static readonly List<GuiVertex> Vertices = new();
+    private static UguiProjection projection;
+    private static Matrix4x4 worldMatrix;
+
+    //同一次图片绘制共用变换和投影，九宫格与平铺不再逐顶点查询相机。
+    private static void PrepareTransform(UguiRuntime.Entry entry)
+    {
+        projection = new UguiProjection(entry.Canvas);
+        worldMatrix = entry.Rect.localToWorldMatrix;
+    }
+
+    //所有图片几何与阴影使用相同的坐标转换。
+    private static Vector2 ToGui(Vector3 local) => projection.ToGui(worldMatrix.MultiplyPoint3x4(local));
 
     //RawImage 与 Image 共用顶点提交和画布变换。
     internal static void DrawRaw(UguiRuntime.Entry entry, RawImage image, Color color)
     {
+        PrepareTransform(entry);
         Vertices.Clear();
         Quad(entry, entry.Rect.rect, image.uvRect, color);
         DrawEffects(entry, image);
@@ -29,6 +42,7 @@ internal static partial class UguiImageRenderer
             sprite.textureRect.width / texture.width, sprite.textureRect.height / texture.height) : new Rect(0, 0, 1, 1);
         Rect rect = entry.Rect.rect;
         if (rect.width <= 0 || rect.height <= 0 || color.a <= 0) return;
+        PrepareTransform(entry);
         Vertices.Clear();
         if (image.preserveAspect && sprite != null && (image.type == Image.Type.Simple || image.type == Image.Type.Filled))
         {
@@ -101,7 +115,7 @@ internal static partial class UguiImageRenderer
     private static void Add(UguiRuntime.Entry e, Rect r, Rect uv, Vector2 p, Color c)
     {
         Vector2 local = r.min + Vector2.Scale(r.size, p);
-        Vertices.Add(new GuiVertex { position = RectTransformUtility.ToGui(e.Canvas, e.Rect.TransformPoint(local)),
+        Vertices.Add(new GuiVertex { position = ToGui(local),
             uv = uv.min + Vector2.Scale(uv.size, p), color = c });
     }
 }

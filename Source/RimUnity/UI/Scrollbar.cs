@@ -32,7 +32,7 @@ public class Scrollbar : Selectable, IPointerDownHandler, IDragHandler
         float t = direction == Direction.RightToLeft || direction == Direction.TopToBottom ? 1 - current : current;
         Vector2 min = Vector2.zero, max = Vector2.one;
         min[axis] = t * (1 - extent); max[axis] = min[axis] + extent;
-        handleRect.anchorMin = min; handleRect.anchorMax = max;
+        Runtime.UguiDirty.SetScrollbarAnchors(handleRect, min, max);
     }
     private void Point(PointerEventData data)
     {

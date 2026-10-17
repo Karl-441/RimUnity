@@ -58,21 +58,15 @@ public sealed partial class ParticleSystemRenderer
     }
 
     //Facing 逐粒子面向观察点，Velocity 沿真实世界速度确定朝向。
-    private Quaternion BillboardAlignment(ParticleSystem system, ParticleSystem.Particle particle, Camera camera)
+    private Quaternion BillboardAlignment(ParticleSystem system, ParticleSystem.Particle particle, in ParticleCameraState cameraState, Vector3 center)
     {
         if (alignment == ParticleSystemRenderSpace.Local) return system.transform.rotation;
         if (alignment == ParticleSystemRenderSpace.World) return Quaternion.identity;
-        Quaternion cameraRotation = camera != null ? camera.transform.rotation : Quaternion.identity;
-        Vector3 forward = cameraRotation * Vector3.forward;
-        Vector3 direction = alignment switch
+        return alignment switch
         {
-            ParticleSystemRenderSpace.Facing when camera != null => system.WorldPosition(particle) - camera.transform.position,
-            ParticleSystemRenderSpace.Velocity => system.WorldVelocity(particle),
-            _ => forward
+            ParticleSystemRenderSpace.Facing when cameraState.HasCamera => cameraState.Align(center - cameraState.Position),
+            ParticleSystemRenderSpace.Velocity => cameraState.Align(system.WorldVelocity(particle)),
+            _ => cameraState.ViewAlignment
         };
-        if (direction.sqrMagnitude > .000001f) forward = direction.normalized;
-        Vector3 up = allowRoll ? cameraRotation * Vector3.up : Vector3.up;
-        if (Mathf.Abs(Vector3.Dot(forward, up)) > .999f) up = Mathf.Abs(forward.x) < .9f ? Vector3.right : Vector3.forward;
-        return Quaternion.LookRotation(forward, up);
     }
 }

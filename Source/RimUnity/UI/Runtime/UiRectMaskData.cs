@@ -17,12 +17,14 @@ internal static class UiRectMaskData
         material ??= UiMaskData.DefaultMaterial();
         if (!material.HasProperty("_UiRectMaskCount")) throw new NotSupportedException("UI Shader 缺少 RectMask2D 裁切入口：" + material.shader.name);
         material.SetFloat("_UiRectMaskCount", count);
+        UguiProjection projection = new(entry.Canvas);
         for (int i = 0; i < count; i++)
         {
             var mask = entry.RectMasks[i]; var transform = (RectTransform)mask.transform; Rect rect = transform.rect;
             rect.xMin += mask.padding.x; rect.yMin += mask.padding.y; rect.xMax -= mask.padding.z; rect.yMax -= mask.padding.w;
             if (rect.width <= 0 || rect.height <= 0) { rows[i * 4] = new Vector4(0, 0, -1, 0); rows[i * 4 + 1] = Vector4.zero; rows[i * 4 + 2] = new Vector4(0, 0, 1, 0); rows[i * 4 + 3] = Vector4.zero; continue; }
-            Vector2 P(float x, float y) => RectTransformUtility.ToGui(entry.Canvas, transform.TransformPoint(new Vector3(x, y))) * Prefs.UIScale;
+            Matrix4x4 world = transform.localToWorldMatrix;
+            Vector2 P(float x, float y) => projection.ToGui(world.MultiplyPoint3x4(new Vector3(x, y))) * Prefs.UIScale;
             Matrix4x4 inverse = UiMaskData.Homography(P(rect.xMin, rect.yMin), P(rect.xMax, rect.yMin), P(rect.xMax, rect.yMax), P(rect.xMin, rect.yMax)).inverse;
             rows[i * 4] = new Vector4(inverse.m00, inverse.m01, inverse.m03, 0);
             rows[i * 4 + 1] = new Vector4(inverse.m10, inverse.m11, inverse.m13, 0);

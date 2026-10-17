@@ -50,7 +50,10 @@ public sealed partial class ParticleSystem
         coordinatedStep = true;
         try
         {
-            ParticlePhysicsWorld.Refresh(activeOnly);
+            ParticlePhysicsWorld.BeginSimulation(activeOnly);
+            foreach (ParticleSystem system in systems)
+                if ((!activeOnly || system.isActiveAndEnabled) && (system.collision.enabled || system.trigger.enabled))
+                    ParticlePhysicsWorld.PrepareSimulation(system.collision.enabled && system.collision.type != ParticleSystemCollisionType.Planes);
             foreach (var system in systems) system.BeginPhysicsEvents();
             for (int step = 0; step < steps; step++)
             {
@@ -59,6 +62,8 @@ public sealed partial class ParticleSystem
                 foreach (ParticleSystem system in systems)
                 {
                     if (activeOnly && !system.isActiveAndEnabled) continue;
+                    if (system.collision.enabled || system.trigger.enabled)
+                        ParticlePhysicsWorld.PrepareSimulation(system.collision.enabled && system.collision.type != ParticleSystemCollisionType.Planes);
                     system.Step(system.currentStepDelta, Vector3.Lerp(system.frameFrom, system.frameTo, step / (float)steps),
                         Vector3.Lerp(system.frameFrom, system.frameTo, (step + 1f) / steps));
                 }

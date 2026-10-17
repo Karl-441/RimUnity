@@ -9,6 +9,23 @@ internal static class ParticlePhysicsWorld
 {
     internal static Collider[] colliders = Array.Empty<Collider>();
     private static readonly Dictionary<(Type, string), MethodInfo> callbacks = new();
+    private static bool advanceSimulationBodies, collisionSnapshotReady;
+
+    //没有碰撞或触发模块的粒子不触发全场刚体和碰撞器扫描。
+    internal static void BeginSimulation(bool advanceBodies)
+    {
+        advanceSimulationBodies = advanceBodies;
+        collisionSnapshotReady = false;
+    }
+
+    //按需准备一次物理快照，也允许停止回调在同批次内启用其他系统的碰撞。
+    internal static void PrepareSimulation(bool worldCollision)
+    {
+        if (advanceSimulationBodies) PhysicsBodySimulation.AdvanceFrame();
+        if (!worldCollision || collisionSnapshotReady) return;
+        Refresh(false);
+        collisionSnapshotReady = true;
+    }
 
     //每次粒子组推进前收集对象，避免逐粒扫描全部 GameObject。
     internal static void Refresh(bool advanceBodies)

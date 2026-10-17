@@ -120,6 +120,7 @@ internal static class UnityHlslCompat
         source = Regex.Replace(source, @"\bSAMPLER\s*\(\s*(\w+)\s*\)\s*;", "SamplerState $1;");
         source = Regex.Replace(source, @"\bCBUFFER_START\b", "RU_UNSUPPORTED_CBUFFER");
         source = Regex.Replace(source, @"\bUNITY_MATRIX_V\b", "_RimUnity_View");
+        source = UnityMatrixCompat.Adapt(source, profile);
         source = Regex.Replace(source, @"\bUNITY_MATRIX_P\b", "_RimUnity_Projection");
         //旧 Cg 允许条件表达式直接作为语句，显式括号避免 Slang 将比较号解析成泛型。
         //起始缩进不能跨行，也不能把多行赋值中问号前的空白当成条件。

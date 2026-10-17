@@ -13,7 +13,8 @@ internal static class ShaderLabBindings
     //显式共享缓冲区布局，纹理绑定与 ShaderLab 属性名称一一对应。
     internal static string Adapt(ShaderLabSource shader)
     {
-        string source = UnityHlslCompat.Prepare(FragmentFacing.Adapt(shader.Program, shader.Manifest.fragmentEntry), shader.Manifest.vertexEntry, shader.Manifest.profile);
+        string program = UnityForwardLighting.Adapt(shader);
+        string source = UnityHlslCompat.Prepare(FragmentFacing.Adapt(program, shader.Manifest.fragmentEntry), shader.Manifest.vertexEntry, shader.Manifest.profile);
         source = UnityColorFunctions.Add(source);
         source = ShaderPreprocessor.Run((shader.Manifest.colorSpace == "Gamma" ? "#define UNITY_COLORSPACE_GAMMA 1\n" : "")
             + string.Join("\n", shader.Manifest.keywords.Select(k => "#define " + k + " 1")) + "\n" + UnityHlslCompat.Macros + "\n" + source);

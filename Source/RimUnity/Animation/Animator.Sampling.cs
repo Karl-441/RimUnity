@@ -15,11 +15,16 @@ public sealed partial class Animator
     private readonly HashSet<AnimationClip> boundClips = new();
     private static readonly ConditionalWeakTable<AnimationClip, HashSet<string>> warnedTargets = new();
     private bool tracksBound;
+    private readonly Dictionary<string, Transform> resolvedAvatarBindings = new(StringComparer.Ordinal);
 
     //每次 Rebind 只绑定一遍控制器，缺失目标不会触发逐帧重试。
     private void BindTracks()
     {
         if (controller == null || tracksBound) return;
+        resolvedAvatarBindings.Clear();
+        foreach (AnimatorBinding binding in avatarBindings)
+            if (binding.target == null || !resolvedAvatarBindings.TryAdd(binding.path, binding.target))
+                throw new InvalidOperationException("Generic Avatar 绑定目标缺失或路径重复：" + binding.path);
         foreach (var layer in controller.layers) foreach (var state in layer.states) BindMotion(state.motion);
         tracksBound = true;
     }
@@ -34,7 +39,9 @@ public sealed partial class Animator
             foreach (var track in motion.clip.tracks)
             {
                 if (trackBindings.ContainsKey(track)) continue;
-                Transform target = string.IsNullOrEmpty(track.path) ? transform : transform.Find(track.path);
+                Transform target = resolvedAvatarBindings.TryGetValue(track.path, out var avatarTarget)
+                    ? avatarTarget
+                    : string.IsNullOrEmpty(track.path) ? transform : transform.Find(track.path);
                 if (target == null)
                 {
                     SkipMissingTarget(motion.clip, track, "节点不存在：" + track.path);

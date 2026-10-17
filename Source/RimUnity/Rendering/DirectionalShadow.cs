@@ -93,6 +93,7 @@ internal sealed class DirectionalShadow : IDisposable
         Matrix4x4 vp = camera.projectionMatrix * camera.worldToCameraMatrix;
         var renderer = UnityStubs.Rendering.CameraTextureRenderer.Current
             ?? throw new InvalidOperationException("宿主未提供阴影附件渲染服务。");
+        texture.PrepareCapture();
         renderer.Render(texture.Target, commands, new CameraView(Matrix4x4.ToNumerics(camera.worldToCameraMatrix),
             Matrix4x4.ToNumerics(camera.projectionMatrix), Matrix4x4.ToNumerics(vp), source.cullingMask),
             new UnityEngine.Rect(0, 0, 1, 1), UnityEngine.Color.clear);

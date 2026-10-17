@@ -75,12 +75,16 @@ internal static class ResourceLoader
                     var numeric = new Texture2D(w, h, TextureFormat.RGBAFloat, false, Get<bool>("linear"));
                     numeric.CoreTexture.ReplaceCpuData(w, h, Waylith.Rendering.LoadedTextureFormat.RgbaFloat, new[] { payload }, 1, Get<bool>("linear"));
                     numeric.wrapMode = Get<TextureWrapMode>("wrapMode"); numeric.filterMode = Get<FilterMode>("filterMode");
+                    if (fields.ContainsKey("anisoLevel")) numeric.anisoLevel = Get<int>("anisoLevel");
+                    if (fields.ContainsKey("mipMapBias")) numeric.mipMapBias = Get<float>("mipMapBias");
                     result = numeric; break;
                 }
                 Texture2D texture = Texture2D.LoadFile(catalog.Resolve(Get<string>("file")), Get<bool>("linear"),
                     fields.ContainsKey("readable") && Get<bool>("readable"));
                 texture.wrapMode = Get<TextureWrapMode>("wrapMode");
                 texture.filterMode = Get<FilterMode>("filterMode");
+                if (fields.ContainsKey("anisoLevel")) texture.anisoLevel = Get<int>("anisoLevel");
+                if (fields.ContainsKey("mipMapBias")) texture.mipMapBias = Get<float>("mipMapBias");
                 result = texture;
                 break;
             case "SpriteAtlas":
@@ -119,7 +123,7 @@ internal static class ResourceLoader
                 if (fields.ContainsKey("skinCounts")) Rendering.SkinWeights.Register(mesh, Get<int[]>("skinCounts"), Get<int[]>("skinIndices"), Get<float[]>("skinWeights"));
                 int[][] triangles = Get<int[][]>("submeshes");
                 mesh.subMeshCount = triangles.Length;
-                for (int i = 0; i < triangles.Length; i++) mesh.SetTriangles(triangles[i], i);
+                for (int i = 0; i < triangles.Length; i++) mesh.SetTriangles(triangles[i], i, false);
                 mesh.RecalculateBounds();
                 result = mesh;
                 break;

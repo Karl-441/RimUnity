@@ -14,7 +14,7 @@ internal static partial class UguiImageRenderer
         foreach (int index in geometry.Triangles)
         {
             Vector2 local = rect.min + Vector2.Scale(rect.size, geometry.Positions[index]);
-            Vertices.Add(new GuiVertex { position = RectTransformUtility.ToGui(entry.Canvas, entry.Rect.TransformPoint(local)),
+            Vertices.Add(new GuiVertex { position = ToGui(local),
                 uv = geometry.UV[index], color = color });
         }
     }
