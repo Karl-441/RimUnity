@@ -16,6 +16,8 @@ foreach ($scenario in @('single','duplicates','reverse','standalone-first','stan
     if ($LASTEXITCODE -ne 0) { throw "离线验证失败：$scenario；夹具目录：$fixtures" }
 }
 #提升内容版本要求，验证不兼容前置不会被内置载荷替代。
+#要求值必须从独立前置自己的 FileVersion 推出来：写死版本号会在下次发版后变成"刚好兼容"，
+#让这个场景静默失效（0.1.10 就是这样坏的：夹具写 0.1.10，而独立前置的 FileVersion 也到了 0.1.10.0）。
 $manifest = Join-Path $fixtures 'A/1.7/Assemblies/EmbeddedFixture.Library.rimunity.json'
 $originalManifest = [IO.File]::ReadAllText($manifest)
 $standaloneVersion = [Version][Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $repo '1.7/Assemblies/RimUnity.dll')).FileVersion
