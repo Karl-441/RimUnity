@@ -35,7 +35,7 @@ internal static class SettingsWindow
             var nav = new Listing_Standard();
             nav.Begin(new Rect(rect.x + 8, rect.y + 8, navigation - 16, rect.height - 16));
             nav.Label("RimUnity");
-            nav.Label("0.1.9 Preview");
+            nav.Label(RuntimeInfo.Version);
             nav.Gap(12);
             string[] titles = { L("渲染设置", "Rendering"), L("运行时", "Runtime"), L("关于我们", "About us") };
             for (int i = 0; i < titles.Length; i++)
@@ -93,7 +93,7 @@ internal static class SettingsWindow
     //贡献者随发布维护，外链只在玩家点击后打开。
     private static void About(Listing_Standard list)
     {
-        list.Label("RimUnity · 0.1.9 Preview");
+        list.Label("RimUnity · " + RuntimeInfo.Version);
         list.Label(L("RimUnity 基于 RimWorld 的 Waylith 引擎提供兼容接口，不包含、也不另行加载一份真正的 Unity 引擎。",
             "RimUnity provides compatibility APIs on RimWorld's Waylith engine. It does not include or load a separate, real Unity engine."));
         if (Group(list, L("社区与贡献者", "Community & contributors"), ref community))

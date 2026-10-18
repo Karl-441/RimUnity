@@ -11,6 +11,7 @@
 - `Deploy.ps1`：备份并替换游戏中的独立版。
 - `Pack.ps1`：生成独立版、内置版与 Unity UPM 发布包。
 - `Sync-Manual.ps1`：同步原始文档到 Unity 包；`-Check` 仅核对。
+- `ModsSwap.ps1`：崩溃安全的 `Mods/RimUnity` 交换（`-Action Status|Move|Repair`）。状态目录在 `<游戏目录>/.rimunity-ci`，用只增不改的 journal 记录每一步，进程被强杀后 `-Action Repair` 能把原模组还原。
 
 `Resolve-BuildPath.ps1`、`Copy-RuntimePackage.ps1` 是上述脚本共用的路径和发布清单实现。`RimUnity.Embedded.targets` 是内容模组的构建接入文件。`Directory.Build.props` 提供 Tools 工程共用的 Unity 路径配置。
 
@@ -24,12 +25,20 @@
 - `PublishingTests`：资源发布、回滚、清单及增量导出。
 - `MemoryAttributionTests`：显存归责模型。
 - `RenderDiagnosticsTests`：运行时渲染诊断。
-- `ScreenEfxTests`：屏幕特效播放与参数快照。
+- `ScreenEfxTests`：屏幕特效播放与参数快照；需要游戏目录（参数或环境变量 `RIMWORLD_DIR`）。
 - `SpikeCaptureTests`：性能尖峰采样和诊断数据。
 - `TrailGeometryTests`：拖尾几何、折射与资源绑定；参数见其 README。
 - `WarmupTests`：加载预热任务调度。
 
 各项目所需参数和外部引用不同，运行前查看对应 csproj、Program.cs 或领域文档。
+
+## 离线入口回归
+
+这三个脚本不需要游戏；第一层 CI 会跑它们（见 `.github/workflows/README.md`）：
+
+- `Test-BuildWorkflow.ps1`：在临时夹具里检查 `Build.ps1` / `Verify.ps1` / `Pack.ps1` 的调用顺序、`-SkipBuild` / `-SkipEmbedded` 语义与失败传播。
+- `Test-ModsSwap.ps1`：`ModsSwap.ps1` 的 10 个崩溃窗口自测，全部在临时目录里跑。
+- `Test-OfflineProjects.ps1`：编译并运行 `CatalogPolicyTests`、`MemoryAttributionTests`、`SpikeCaptureTests`、`WarmupTests` 四个不需要游戏的工程。
 
 ## 按需工具与素材
 

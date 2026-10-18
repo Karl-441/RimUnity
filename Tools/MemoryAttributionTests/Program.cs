@@ -9,22 +9,26 @@ static void Check(bool value, string message)
     Console.WriteLine("PASS " + message);
 }
 
+//盘符取自当前机器的系统盘：测试对象是盘符绝对路径与相对路径的判定，不需要写死具体盘符。
+string drive = Path.GetPathRoot(Environment.SystemDirectory).TrimEnd(Path.DirectorySeparatorChar);
 var sources = new[] {
-    new MemoryAttribution.Source("nivarian", "涅瓦莲", "D:/Mods/Nivarian"),
-    new MemoryAttribution.Source("dlc", "DLC", "D:/Game/Data/Biotech")
+    new MemoryAttribution.Source("nivarian", "涅瓦莲", drive + "/Mods/Nivarian"),
+    new MemoryAttribution.Source("dlc", "DLC", drive + "/Game/Data/Biotech")
 };
-Check(MemoryAttribution.Resolve("D:\\Mods\\Nivarian\\Textures\\a.png", "GameTexture", sources).Owner.Contains("[nivarian]"), "absolute file owner");
+Check(MemoryAttribution.Resolve(drive + @"\Mods\Nivarian\Textures\a.png", "GameTexture", sources).Owner.Contains("[nivarian]"), "absolute file owner");
 Check(MemoryAttribution.Resolve("Nivarian/Textures/a.png", "GameTexture", sources).Owner.Contains("[nivarian]"), "host relative content-root label");
 Check(MemoryAttribution.Resolve("NivarianExtra/Textures/a.png", "GameTexture", sources).Owner == MemoryAttribution.Unknown, "prefix collision is not attributed");
-Check(MemoryAttribution.Resolve("D:/Mods/Nivarian/../Other/a.png", "GameTexture", sources).Owner == MemoryAttribution.Unknown, "relative escape is not attributed");
+Check(MemoryAttribution.Resolve(drive + "/Mods/Nivarian/../Other/a.png", "GameTexture", sources).Owner == MemoryAttribution.Unknown, "relative escape is not attributed");
 Check(MemoryAttribution.Resolve("a.png", "GameTexture", sources).Owner == MemoryAttribution.Unknown, "short filename stays unknown");
-var ambiguous = sources.Concat(new[] { new MemoryAttribution.Source("other", "Other", "E:/Mods/Nivarian") }).ToArray();
+//另一个盘符上的同名目录：根名相同、根路径不同，用于「重名根」与「绝对路径」两种判定。
+string otherDrive = (drive[0] == 'C' ? "D" : "C") + ":";
+var ambiguous = sources.Concat(new[] { new MemoryAttribution.Source("other", "Other", otherDrive + "/Mods/Nivarian") }).ToArray();
 Check(MemoryAttribution.Resolve("Nivarian/Textures/a.png", "GameTexture", ambiguous).Owner == MemoryAttribution.Unknown, "duplicate root names stay unknown");
-Check(MemoryAttribution.Resolve("D:/Mods/Nivarian/Textures/a.png", "GameTexture", ambiguous).Owner.Contains("[nivarian]"), "absolute path resolves duplicate basenames");
+Check(MemoryAttribution.Resolve(drive + "/Mods/Nivarian/Textures/a.png", "GameTexture", ambiguous).Owner.Contains("[nivarian]"), "absolute path resolves duplicate basenames");
 Check(MemoryAttribution.Resolve("TextureAtlas_Building", "Atlas", sources).Owner == MemoryAttribution.Shared, "mixed atlas stays shared");
 Check(MemoryAttribution.Resolve("Resources/Textures/a.png", "GameTexture", sources).Owner == MemoryAttribution.Builtin, "builtin asset is not charged to triggering mod");
-var nested = sources.Concat(new[] { new MemoryAttribution.Source("nested", "Nested", "D:/Mods/Nivarian/Sub") }).ToArray();
-Check(MemoryAttribution.Resolve("D:/Mods/Nivarian/Sub/a.png", "GameTexture", nested).Owner.Contains("[nested]"), "most specific absolute root wins");
+var nested = sources.Concat(new[] { new MemoryAttribution.Source("nested", "Nested", drive + "/Mods/Nivarian/Sub") }).ToArray();
+Check(MemoryAttribution.Resolve(drive + "/Mods/Nivarian/Sub/a.png", "GameTexture", nested).Owner.Contains("[nested]"), "most specific absolute root wins");
 
 var rows = Enumerable.Range(0, 22197).Select(i => new MemoryAttribution.Row(i % 2 == 0 ? "A" : "B", "asset" + i,
     "GameTexture", i + 1, i % 3 == 0 ? "设备本地" : i % 3 == 1 ? "系统内存" : "未知", "test", "", "image:" + i)).ToArray();

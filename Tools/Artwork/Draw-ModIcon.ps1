@@ -1,4 +1,4 @@
-param([string]$Output = (Join-Path $PSScriptRoot '../../About/ModIcon.png'))
+﻿param([string]$Output = (Join-Path $PSScriptRoot '../../About/ModIcon.png'))
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
