@@ -160,25 +160,37 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         colors.Add(c); normals.Add(streamNormal); tangents.Add(streamTangent);
     }
     private void Quad(int start) { indices.Add(start); indices.Add(start + 1); indices.Add(start + 2); indices.Add(start); indices.Add(start + 2); indices.Add(start + 3); }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private void PrepareSubmitUI(Material mat)
+    {
+        for (int i = 0; i < colors.Count; i++) { Color color = colors[i]; color.a *= cameraUiEntry.Alpha; colors[i] = color; }
+        UI.Runtime.UiMaskData.Apply(mat);
+    }
     private void Submit(ref Mesh target, Material mat, Camera camera)
     {
-        if (indices.Count == 0) return;
-        if (uiEntry != null) { CaptureDiagnostics(mat, null); SubmitUI(mat); return; }
-        if (cameraUiEntry != null)
+        var dpaToken = Diagnostics.DpaDiagnostics.BeginSubmit();
+        int dpaRoute = 0;
+        try
         {
-            for (int i = 0; i < colors.Count; i++) { Color color = colors[i]; color.a *= cameraUiEntry.Alpha; colors[i] = color; }
-            UI.Runtime.UiMaskData.Apply(mat);
+            if (indices.Count == 0) { dpaRoute = 1; return; }
+            if (uiEntry != null) { CaptureDiagnostics(mat, null); SubmitUI(mat); dpaRoute = 2; return; }
+            if (cameraUiEntry != null) PrepareSubmitUI(mat);
+            if (cameraUiEntry == null && ParticleDrawBatch.TryAppend(mat, gameObject.layer, propertyBlock,
+                vertices, normals, tangents, colors, packedUV, custom1, custom2, indices)) { dpaRoute = 3; return; }
+            if (target == null)
+            {
+                target = new Mesh { name = "RimUnity Particle Batch", indexFormat = IndexFormat.UInt32 };
+                target.MarkDynamic();
+            }
+            target.SetVertices(vertices); target.SetColors(colors); target.SetUVs(0, packedUV); target.SetUVs(1, custom1); target.SetUVs(2, custom2); target.SetTriangles(indices, 0);
+            target.SetNormals(normals); target.SetTangents(tangents);
+            CaptureDiagnostics(mat, target);
+            RimUnity.Graphics.DrawMesh(target, Matrix4x4.identity, mat, cameraUiEntry?.RenderLayer ?? gameObject.layer, 0, propertyBlock);
+            dpaRoute = cameraUiEntry == null ? 4 : 5;
         }
-        if (cameraUiEntry == null && ParticleDrawBatch.TryAppend(mat, gameObject.layer, propertyBlock,
-            vertices, normals, tangents, colors, packedUV, custom1, custom2, indices)) return;
-        if (target == null)
+        finally
         {
-            target = new Mesh { name = "RimUnity Particle Batch", indexFormat = IndexFormat.UInt32 };
-            target.MarkDynamic();
+            if (dpaToken.Start != 0) Diagnostics.DpaDiagnostics.EndSubmit(dpaToken, Time.frameCount, vertices.Count, indices.Count, dpaRoute);
         }
-        target.SetVertices(vertices); target.SetColors(colors); target.SetUVs(0, packedUV); target.SetUVs(1, custom1); target.SetUVs(2, custom2); target.SetTriangles(indices, 0);
-        target.SetNormals(normals); target.SetTangents(tangents);
-        CaptureDiagnostics(mat, target);
-        RimUnity.Graphics.DrawMesh(target, Matrix4x4.identity, mat, cameraUiEntry?.RenderLayer ?? gameObject.layer, 0, propertyBlock);
     }
 }

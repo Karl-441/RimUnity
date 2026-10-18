@@ -8,8 +8,10 @@
 #        HARMONY_PATH  例：<创意工坊目录>\content\294100\2009463077\1.7\Assemblies\0Harmony.dll
 #   3. 装 .NET 10 SDK（Source/Directory.Build.props 的 TargetFramework 是 net10.0，只有 .NET 8 SDK 会 NETSDK1045）
 #
-# 未接进来的：Tools/Test-EmbeddedInGame.ps1——它需要桌面会话、会临时移动真实的 Mods/RimUnity，
-# 而且它的 -FixtureRoot 要手工从上一步 Verify-Embedded.ps1 的输出里取；这一层只跑离线验证链。
+# 三层里的后两层：构建 + 离线验证必跑，游戏内验证由 run-ingame 手动开启。
+# 游戏内那步会真实启动游戏两次、临时换掉真实的 Mods/RimUnity；交换与恢复由
+# Tools/ModsSwap.ps1 的 journal 保证（同卷原子 rename + 幂等修复），即使步骤被强杀，
+# 下次运行也会先自动还原。
 name: manual-verify
 
 on:
@@ -17,6 +19,10 @@ on:
     inputs:
       run-pack:
         description: 额外执行 Tools/Pack.ps1 打出发布产物
+        type: boolean
+        default: false
+      run-ingame:
+        description: 额外跑游戏内验证（真实启动游戏两次，需要桌面会话）
         type: boolean
         default: false
 
@@ -58,6 +64,17 @@ jobs:
         shell: pwsh
         run: ./Tools/Verify.ps1 -SkipBuild -Embedded
 
+      # 第三层：真实启动游戏两次，验证程序集加载顺序、Def 归属与缓存提取。
+      # 夹具路径由上一步 Verify-Embedded.ps1 写到 artifacts/verify/embedded-fixtures.txt。
+      - name: 游戏内验证（可选）
+        if: inputs.run-ingame
+        shell: pwsh
+        run: |
+          $record = 'artifacts/verify/embedded-fixtures.txt'
+          if (!(Test-Path -LiteralPath $record -PathType Leaf)) { throw '缺少夹具路径记录；离线验证步骤可能没有跑完。' }
+          $fixtures = (Get-Content -LiteralPath $record -Raw).Trim()
+          ./Tools/Test-EmbeddedInGame.ps1 -GameRoot $env:RIMWORLD_DIR -FixtureRoot $fixtures
+
       - name: 打包发布产物
         if: inputs.run-pack
         shell: pwsh
@@ -73,3 +90,12 @@ jobs:
           $dirty = git status --porcelain
           if ($dirty) { Write-Host $dirty; throw '工作区仍有改动：构建过程往仓库里写了不该写的东西' }
           Write-Host '工作区干净。'
+
+      # 交换状态是崩溃安全设计的落点：跑完（无论哪一步失败）都不该留下未完成的 journal。
+      - name: 确认没有遗留的 Mods 交换状态
+        if: always()
+        shell: pwsh
+        run: |
+          $status = & ./Tools/ModsSwap.ps1 -Action Status -GameRoot $env:RIMWORLD_DIR
+          Write-Host $status
+          if ($status -notmatch '没有未完成的交换') { throw "存在未完成的 Mods/RimUnity 交换：$status" }
