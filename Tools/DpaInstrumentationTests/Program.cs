@@ -134,7 +134,10 @@ class Program
     }
     static void CheckCatalog()
     {
-        const string root = @"D:\SteamLibrary\steamapps\common\RimWorld";
+        string root = Environment.GetEnvironmentVariable("RIMWORLD_DIR");
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            throw new InvalidOperationException("Set RIMWORLD_DIR to the game directory for DPA metadata checks.");
+        root = Path.GetFullPath(root);
         string mod = Path.Combine(Environment.GetEnvironmentVariable("RIMUNITY_DIR") ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../")), @"1.7\Assemblies");
         AssemblyLoadContext.Default.Resolving += (context, name) => {
             foreach (var dir in new[] { root, mod }) { string file = Path.Combine(dir, name.Name + ".dll"); if (File.Exists(file)) return context.LoadFromAssemblyPath(file); }

@@ -1,6 +1,6 @@
 # DPA instrumentation checks
 
-Run `dotnet run --project Tools/DpaInstrumentationTests -c Release` after updating DPA's source. The default source location is the installed Dubs Performance Analyzer mod; override `-p:DpaRoot=<path-to-Source/Profiling>` and the project's Harmony reference for another installation. A flat staging directory can instead be supplied with `-p:DpaSource=<path>`.
+Set `RIMWORLD_DIR` to the game directory and `HARMONY_PATH` to `0Harmony.dll`, then run `dotnet run --project Tools/DpaInstrumentationTests -c Release` after updating DPA's source. The default source location is `Mods/Dubs Performance Analyzer/Source/Profiling` under that game directory; override it with `-p:DpaRoot=<path-to-Source/Profiling>`. A flat staging directory can instead be supplied with `-p:DpaSource=<path>`. Override the Harmony reference with `-p:HarmonyPath=<path-to-0Harmony.dll>`.
 
 The harness tests real Harmony prefix/finalizer behavior, constructor and private-method call wrappers, return values, exceptions, nesting, main-thread guards, reset, bounded spikes, warm allocation overhead, clipboard filtering and diagnostic pause/Cleanup. It links the runtime's numeric diagnostic bridge and uses small game/UI stubs; it does not create a GPU device.
 
