@@ -142,9 +142,24 @@ try {
         Assert-True (Test-ModsSwapSameVolume -Left $paths.Live -Right $paths.StateDir) '状态目录应在同一卷'
         Assert-True ([IO.Path]::GetFullPath($paths.StateDir).StartsWith([IO.Path]::GetFullPath($game))) '状态目录应在游戏根目录下'
     }
+
+    Invoke-Case '10 原本没有原模组（no-original）：修复只删测试副本' {
+        $game = Join-Path $script:Root 'no-original'
+        [IO.Directory]::CreateDirectory((Join-Path $game 'Mods')) | Out-Null
+        $swap = Invoke-ModsSwapMove -GameRoot $game
+        Assert-True (-not $swap.HadOriginal) '应识别为没有原模组'
+        Assert-True (-not $swap.Backup) '不应产生备份'
+        [IO.Directory]::CreateDirectory((Join-Path $swap.Paths.Live 'About')) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $swap.Paths.Live 'payload.txt'), 'test-copy', [Text.UTF8Encoding]::new($false))
+        New-ModsSwapTestCopyMarker $swap
+        $r = Repair-ModsSwap -GameRoot $game
+        Assert-True $r.RemovedTestCopy '应删测试副本'
+        Assert-True $r.Cleared '应清 journal'
+        Assert-True (-not (Test-Path -LiteralPath $swap.Paths.Live)) 'live 应回到不存在'
+    }
 } finally {
     if (Test-Path -LiteralPath $script:Root) { Remove-Item -LiteralPath $script:Root -Recurse -Force }
 }
 
 if ($script:Failures -gt 0) { throw "ModsSwap 自测失败：$($script:Failures) 个用例" }
-Write-Host 'ModsSwap 自测全部通过（9 个窗口）'
+Write-Host 'ModsSwap 自测全部通过（10 个窗口）'

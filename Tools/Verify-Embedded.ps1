@@ -122,4 +122,9 @@ foreach ($variant in @('older','newer','conflict')) {
     }
 
 }
+# 把夹具路径写成机器可读的记录，第三层（游戏内）工作流据此把 -FixtureRoot 传下去。
+$fixtureRecord = Join-Path $repo 'artifacts/verify/embedded-fixtures.txt'
+[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($fixtureRecord)) | Out-Null
+[IO.File]::WriteAllText($fixtureRecord, $fixtures, [Text.UTF8Encoding]::new($false))
 Write-Output "离线加载验证通过。夹具与缓存：$fixtures。未验证游戏内渲染和原生挂载。"
+Write-Output "RIMUNITY_FIXTURES=$fixtures"
