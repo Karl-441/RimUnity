@@ -12,10 +12,12 @@
 # 修复时按 marker 区分「我们的测试副本」与「用户自己的 RimUnity」，后者一律不动。
 # createdPaths 记录本次新建的测试模组目录，修复时一并删除——只删 journal 登记过、
 # 位于 Mods 根目录下、且名字带约定前缀的路径。
-param(
-    [ValidateSet('Move', 'Repair', 'Status')][string]$Action = 'Status',
-    [string]$GameRoot = ''
-)
+#
+# 注意：本文件会被其它脚本 dot-source（Test-EmbeddedInGame.ps1 / Test-ModsSwap.ps1），
+# 所以这里**不能有 param 块**。dot-source 在调用方作用域里执行，param 的默认值会覆盖
+# 调用方的同名变量——曾把 Test-EmbeddedInGame 的 $GameRoot 清成空串，报
+# "Cannot bind argument to parameter 'GameRoot' because it is an empty string"。
+# 命令行参数在文件末尾按 $args 手工解析，仅直接运行时生效。
 $ErrorActionPreference = 'Stop'
 
 $script:SwapJournalPrefix = 'mods-swap-'
@@ -231,10 +233,13 @@ function Repair-ModsSwap {
         if (-not (Test-Path -LiteralPath $live -PathType Container)) { throw "还原后 live 不存在：$live" }
         $result.RestoredOriginal = $true
     } elseif ($hasLive -and $isTestCopy) {
-        # 没有备份却只剩我们的测试副本：原模组已丢失，删掉测试副本并明确报错。
+        # 只剩我们的测试副本：删掉它。本来就没有原模组（no-original）时这就是完整还原；
+        # 其余状态说明备份丢了，必须明确报错，不能假装成功。
         Remove-ModsSwapPath -Path $live
         $result.RemovedTestCopy = $true
-        throw ("原模组的备份缺失，无法还原；已删除测试副本。请重新安装 RimUnity。journal={0}" -f $journal.__file)
+        if ($journal.state -ne 'no-original') {
+            throw ("原模组的备份缺失，无法还原；已删除测试副本。请重新安装 RimUnity。journal={0}" -f $journal.__file)
+        }
     } elseif ($journal.state -ne 'planned' -and $journal.state -ne 'no-original' -and -not $hasLive) {
         throw ("原模组备份缺失且 live 不存在，无法自动恢复；journal 保留在 {0} 供排查。" -f $journal.__file)
     }
@@ -244,8 +249,20 @@ function Repair-ModsSwap {
     return [pscustomobject]$result
 }
 
-# ---- 命令行入口（人工排查与自测脚本用）----
-if ($GameRoot) {
+# ---- 命令行入口（只有直接运行本文件时生效；dot-source 不解析参数）----
+# 用法：pwsh -File Tools/ModsSwap.ps1 -Action Status|Move|Repair -GameRoot <游戏根目录>
+if ($MyInvocation.InvocationName -ne '.' -and @($args).Count -gt 0) {
+    $Action = 'Status'
+    $GameRoot = ''
+    for ($i = 0; $i -lt @($args).Count; $i++) {
+        switch -Exact ([string]$args[$i]) {
+            '-Action'   { $i++; $Action = [string]$args[$i] }
+            '-GameRoot' { $i++; $GameRoot = [string]$args[$i] }
+            default     { throw "未知参数：$($args[$i])" }
+        }
+    }
+    if (-not $GameRoot) { throw '需要 -GameRoot。' }
+    if (@('Move', 'Repair', 'Status') -notcontains $Action) { throw "未知 -Action：$Action" }
     $paths = Get-ModsSwapPaths $GameRoot
     switch ($Action) {
         'Move'   { $r = Invoke-ModsSwapMove -GameRoot $GameRoot; Write-Output ("已移走：{0}" -f $r.Backup) }
