@@ -20,6 +20,8 @@ Coverage:
 - Independent map/Bloom/preview leases, source mutation while old snapshots remain in flight, binding-buffer refresh and immutable identity replacement.
 - Early filtering failure and failure after partial cloning; resource-reference clearing; oversize buffer rejection; pool cap; shutdown epochs; concurrent return/rent and duplicate disposal.
 - Warm allocation comparison of two captures per synthetic frame, with a required reduction of at least 90%. Timing includes construction and disposal on both paths; it is an offline CPU benchmark, not an FPS/TPS/GPU measurement.
+- CPU comparison against frozen `Round2HdrDrawFrame.cs` (the previous deployed identity-based binding implementation), using three alternating matched runs and per-frame P95. Keep both frozen implementations unchanged.
+- Snapshot-owned draw buffers, source commands without overrides, independent in-flight commands, pipeline/instanced-cache invalidation, and resource-reference clearing before reuse. Known host layouts use direct field copies and retain original sort keys; unknown layouts fall back to the host's Rent/Return path.
 
 The pool also reuses snapshot-owned `MaterialBinding` buffers. All values are repopulated on capture and all resource references are cleared before pooling; there is no cross-frame material-result cache. The host's readonly ID/material/variant identity must match before a buffer can be reused, and every capture receives a unique derived data generation for host upload invalidation.
 

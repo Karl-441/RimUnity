@@ -34,6 +34,7 @@ internal static class Program
         Lifetimes();
         BindingReuse();
         IdentityReuse();
+        OwnedCommands();
         Failures();
         Limits();
         CrossThreadRelease();
@@ -252,6 +253,45 @@ internal static class Program
         }
         Check(PoolCount() == 0, "historical binding identities cannot grow beyond 2048 in an idle workspace");
     }
+    private static void OwnedCommands()
+    {
+        Check(SnapshotDrawBuffers.Available, "fast command layout verified against real host");
+        HdrDrawFrame.ClearWorkspaces();
+        using var source = Source(20, 3);
+        var original = source.Draws[0];
+        AccessTools.Field(typeof(FinalDrawItem), "cachedPipelineVersion").SetValue(original, 1234);
+        AccessTools.Field(typeof(FinalDrawItem), "cachedInstancedResolvedDataVersion").SetValue(original, 9999L);
+        var first = new HdrDrawFrame(source);
+        object work = Work(first);
+        var copies = first.Frame.Draws.ToArray();
+        foreach (var draw in copies)
+        {
+            Check((int)AccessTools.Field(typeof(FinalDrawItem), "cachedPipelineVersion").GetValue(draw) == -1, "derived commands invalidate host pipeline caches");
+            Check((long)AccessTools.Field(typeof(FinalDrawItem), "cachedInstancedResolvedDataVersion").GetValue(draw) == -1, "derived commands invalidate instanced material caches");
+        }
+        using var stillInFlight = new HdrDrawFrame(source);
+        Check(!stillInFlight.Frame.Draws.Any(d => copies.Contains(d)), "in-flight snapshots never share mutable command buffers");
+        first.Dispose();
+        foreach (var draw in copies) Check(draw.Mesh == null && draw.Binding == null && draw.Instancing == null && draw.Storage == null, "retired owned commands clear all resource references");
+        using var reused = new HdrDrawFrame(source);
+        Check(ReferenceEquals(work, Work(reused)) && reused.Frame.Draws.SequenceEqual(copies), "retired command objects are reused without concurrent host pool operations");
+        //The snapshot freezes effective parameters even when the host item has no overrides.
+        var noOverride = new FinalDrawItem(Matrix4x4.Identity, original.Mesh, original.Binding);
+        using var noOverrideSource = Source(0);
+        noOverrideSource.Draws.Add(noOverride);
+        using var captured = new HdrDrawFrame(noOverrideSource);
+        Check(captured.Frame.Draws[0].HasOverride && captured.Frame.Draws[0].Uniforms.Equals(original.Binding.Uniforms)
+            && captured.Frame.Draws[0].Resources.Equals(original.Binding.Resources), "source without overrides freezes effective material parameters");
+        var sourceShader = MakeShader(); var derivedShader = MakeShader(true);
+        AccessTools.PropertySetter(typeof(SceneGrabPoint), "Queue").Invoke(derivedShader.SceneGrab, new object[] { 4500 });
+        LinearShaderVariants.Variants[sourceShader] = derivedShader;
+        using var grabbedSource = Source(0);
+        grabbedSource.Draws.Add(MakeDraw(MakeBinding(700, sourceShader), 0, 0, 29));
+        using var expectedGrab = new BaselineHdrDrawFrame(grabbedSource);
+        using var actualGrab = new HdrDrawFrame(grabbedSource);
+        Check(actualGrab.Frame.Draws[0].RenderQueue == 4500 && actualGrab.Frame.Draws[0].RenderQueue == expectedGrab.Frame.Draws[0].RenderQueue
+            && actualGrab.Frame.Draws[0].SortKey.Equals(expectedGrab.Frame.Draws[0].SortKey), "derived shader grab queue correction preserves host queue slices and original sort key");
+    }
     private static void Failures()
     {
         HdrDrawFrame.ClearWorkspaces();
@@ -314,20 +354,34 @@ internal static class Program
     {
         using var source = Source(360, 45);
         Action baseline = () => { using var map = new BaselineHdrDrawFrame(source); using var bloom = new BaselineHdrDrawFrame(source, 1 << 29, true); };
+        Action round2 = () => { using var map = new Round2HdrDrawFrame(source); using var bloom = new Round2HdrDrawFrame(source, 1 << 29, true); };
         Action optimized = () => { using var map = new HdrDrawFrame(source); using var bloom = new HdrDrawFrame(source, 1 << 29, true); };
-        for (int i = 0; i < 2000; i++) { baseline(); optimized(); }
-        var old = Measure(baseline); var next = Measure(optimized);
+        for (int i = 0; i < 3000; i++) { baseline(); round2(); optimized(); }
+        var old = Measure(baseline);
+        var previousRuns = new (double bytes, double us, double p95)[3];
+        var nextRuns = new (double bytes, double us, double p95)[3];
+        for (int i = 0; i < 3; i++)
+        {
+            if (i % 2 == 0) { previousRuns[i] = Measure(round2); nextRuns[i] = Measure(optimized); }
+            else { nextRuns[i] = Measure(optimized); previousRuns[i] = Measure(round2); }
+            Console.WriteLine($"CPU matched run {i + 1}: Round2={previousRuns[i].us:F3} us, p95={previousRuns[i].p95:F3}; optimized={nextRuns[i].us:F3} us, p95={nextRuns[i].p95:F3}.");
+        }
+        var previous = previousRuns.OrderBy(r => r.us).ElementAt(1); var next = nextRuns.OrderBy(r => r.us).ElementAt(1);
         Console.WriteLine($"Two snapshots / synthetic frame: baseline={old.bytes:F0} B, {old.us:F3} us; optimized={next.bytes:F0} B, {next.us:F3} us; allocation reduction={1 - next.bytes / old.bytes:P2}.");
+        Console.WriteLine($"Previous deployed Round2={previous.bytes:F0} B, {previous.us:F3} us; command buffers={next.us:F3} us; CPU reduction vs Round2={1 - next.us / previous.us:P2} (median of 3 matched runs, construction + disposal, no DPA probes).");
         Check(next.bytes <= old.bytes * .1, "warm snapshot allocation reduced by at least 90% in matched synthetic scene");
     }
-    private static (double bytes, double us) Measure(Action action)
+    private static (double bytes, double us, double p95) Measure(Action action)
     {
         const int frames = 5000;
+        var ticks = new long[frames];
         var watch = new Stopwatch();
         long before = GC.GetAllocatedBytesForCurrentThread(); watch.Start();
-        for (int i = 0; i < frames; i++) action();
+        for (int i = 0; i < frames; i++) { long start = Stopwatch.GetTimestamp(); action(); ticks[i] = Stopwatch.GetTimestamp() - start; }
         watch.Stop();
-        return ((GC.GetAllocatedBytesForCurrentThread() - before) / (double)frames, watch.Elapsed.TotalMicroseconds / frames);
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        Array.Sort(ticks);
+        return (bytes / (double)frames, watch.Elapsed.TotalMicroseconds / frames, ticks[(int)(frames * .95) - 1] * 1000000.0 / Stopwatch.Frequency);
     }
     private static object Work(HdrDrawFrame frame) => AccessTools.Field(typeof(HdrDrawFrame), "workspace").GetValue(frame);
     private static int PoolCount() => ((ICollection)AccessTools.Field(typeof(HdrDrawFrame), "Workspaces").GetValue(null)).Count;
@@ -335,7 +389,10 @@ internal static class Program
     {
         if (!new[] { "Dynamic", "Bindings", "Linear" }.All(name =>
             (int)AccessTools.Field(work.GetType(), name).GetValue(work).GetType().GetProperty("Count").GetValue(AccessTools.Field(work.GetType(), name).GetValue(work)) == 0)) return false;
-        return ((IEnumerable<MaterialBinding>)AccessTools.Field(work.GetType(), "BindingSlots").GetValue(work)).All(binding =>
+        bool drawsCleared = ((IEnumerable<FinalDrawItem>)AccessTools.Field(work.GetType(), "DrawSlots").GetValue(work)).All(draw =>
+            draw.Mesh == null && draw.Binding == null && draw.Instancing == null && draw.Storage == null
+            && AccessTools.Field(typeof(FinalDrawItem), "overrideResources").GetValue(draw).Equals(default(MaterialTextureResourceSet<Texture>)));
+        return drawsCleared && ((IEnumerable<MaterialBinding>)AccessTools.Field(work.GetType(), "BindingSlots").GetValue(work)).All(binding =>
             binding.Shader == null && binding.MaterialLayout == null && binding.DebugName == null && binding.ShaderVariant.Shader == null
             && binding.StorageArrays.Length == 0 && binding.Resources.Equals(default(MaterialTextureResourceSet<Texture>))
             && binding.Uniforms.Equals(default(MaterialUniformBytes)));

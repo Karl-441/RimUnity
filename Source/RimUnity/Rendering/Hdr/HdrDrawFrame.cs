@@ -14,6 +14,7 @@ internal sealed class HdrDrawFrame : IDisposable
     internal static readonly string MetadataLayout;
     private static readonly Action<MeshDrawFrame, MeshDrawFrame> CopyMetadata = FrameMetadataCopier.Build<MeshDrawFrame>(out MetadataLayout);
     internal readonly MeshDrawFrame Frame;
+    internal static string CommandBufferMode => SnapshotDrawBuffers.Status;
     private Workspace workspace;
     private int disposed;
     //Only empty CPU buffers survive between snapshots/games. No material or draw references
@@ -21,8 +22,20 @@ internal sealed class HdrDrawFrame : IDisposable
     private sealed class Workspace
     {
         internal readonly List<FinalDrawItem> Dynamic = new();
-        internal readonly Dictionary<MaterialBinding, MaterialBinding> Bindings = new();
+        internal readonly record struct CapturedBinding(MaterialBinding Binding, bool Linear, int GrabQueue);
+        internal readonly Dictionary<MaterialBinding, CapturedBinding> Bindings = new();
         internal readonly List<byte> Linear = new();
+        internal readonly List<FinalDrawItem> DrawSlots = new();
+        private int usedDraws;
+        internal FinalDrawItem CopyDraw(FinalDrawItem source, CapturedBinding captured)
+        {
+            int index = usedDraws;
+            if (index == DrawSlots.Count) DrawSlots.Add(SnapshotDrawBuffers.Create());
+            var result = DrawSlots[index];
+            usedDraws++;
+            SnapshotDrawBuffers.Copy(source, result, captured.Binding, captured.GrabQueue);
+            return result;
+        }
         //Owned binding buffers, not a material-result cache: every lease repopulates all values.
         //Only immutable numeric identity remains after Clear; shaders/layouts/textures are dropped.
         internal readonly List<MaterialBinding> BindingSlots = new();
@@ -82,6 +95,8 @@ internal sealed class HdrDrawFrame : IDisposable
         internal void Clear()
         {
             Dynamic.Clear(); Bindings.Clear(); Linear.Clear();
+            for (int i = 0; i < usedDraws; i++) SnapshotDrawBuffers.Clear(DrawSlots[i]);
+            usedDraws = 0;
             foreach (var bucket in activeBuckets)
             {
                 for (int i = 0; i < bucket.Used; i++)
@@ -94,7 +109,7 @@ internal sealed class HdrDrawFrame : IDisposable
             }
             activeBuckets.Clear();
         }
-        internal bool CanRetain => Dynamic.Capacity <= 8192 && Linear.Capacity <= 8192 && Bindings.EnsureCapacity(0) <= 2048 && BindingSlots.Count <= 2048 && identities.Count <= 2048;
+        internal bool CanRetain => Dynamic.Capacity <= 8192 && Linear.Capacity <= 8192 && DrawSlots.Capacity <= 8192 && Bindings.EnsureCapacity(0) <= 2048 && BindingSlots.Count <= 2048 && identities.Count <= 2048;
     }
     private static readonly Func<ShaderVariantKey, long> VariantId = AccessTools.Method(
         AccessTools.TypeByName("Waylith.Rendering.ShaderVariantIdRegistry"), "GetOrCreateId").CreateDelegate<Func<ShaderVariantKey, long>>();
@@ -164,26 +179,27 @@ internal sealed class HdrDrawFrame : IDisposable
                 var item = p < persistent.Count && (d == dynamic.Count || persistent[p].SortKey.CompareTo(dynamic[d].SortKey) <= 0)
                     ? persistent[p++] : dynamic[d++];
                 var original = item.Binding;
-                bool linear = LinearShaderVariants.TryGet(original.Shader, out var shader);
-                if (!linear) shader = original.Shader;
-                if (!bindings.TryGetValue(original, out var binding))
+                if (!bindings.TryGetValue(original, out var captured))
                 {
+                    bool linear = LinearShaderVariants.TryGet(original.Shader, out var shader);
+                    if (!linear) shader = original.Shader;
                     var state = original.PipelineState;
                     if (readOnlyDepth) state = state with { Depth = state.Depth with { Write = false },
                         Stencil = state.Stencil with { WriteMask = 0, PassOp = StencilOp.Keep, FailOp = StencilOp.Keep, DepthFailOp = StencilOp.Keep } };
                     var variant = original.ShaderVariant;
                     var key = new ShaderVariantKey(shader, variant.DynamicKeywordKeyId, variant.DynamicKeywordKey,
                         variant.UseTexture, variant.OutlineMrt, variant.Instanced);
-                    binding = workspace.Capture(original, shader, key, state);
-                    bindings.Add(original, binding);
+                    captured = new Workspace.CapturedBinding(workspace.Capture(original, shader, key, state), linear, shader.SceneGrab?.Queue ?? int.MinValue);
+                    bindings.Add(original, captured);
                 }
-                var copy = Rent(item.Matrix, item.PassId, item.Mesh, binding, true, in item.Uniforms, in item.Resources,
-                    Frame.Draws.Count, item.RenderQueue, item.Instancing, item.Layer, 0, item.Storage);
-                SortKey(copy) = item.SortKey;
+                var copy = SnapshotDrawBuffers.Available ? workspace.CopyDraw(item, captured)
+                    : Rent(item.Matrix, item.PassId, item.Mesh, captured.Binding, true, in item.Uniforms, in item.Resources,
+                        Frame.Draws.Count, item.RenderQueue, item.Instancing, item.Layer, 0, item.Storage);
+                if (!SnapshotDrawBuffers.Available) SortKey(copy) = item.SortKey;
                 //If list growth fails, the rented item has not acquired a frame owner yet.
                 try { Frame.Draws.Add(copy); }
-                catch { FinalDrawItem.Return(copy); throw; }
-                workspace.Linear.Add(linear ? (byte)1 : (byte)0);
+                catch { if (!SnapshotDrawBuffers.Available) FinalDrawItem.Return(copy); throw; }
+                workspace.Linear.Add(captured.Linear ? (byte)1 : (byte)0);
             }
         }
         catch { Dispose(); throw; }
@@ -201,7 +217,12 @@ internal sealed class HdrDrawFrame : IDisposable
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
         var released = workspace;
         workspace = null;
-        try { Frame?.Dispose(); }
+        try
+        {
+            //Owned command buffers stay with this lease; the host must not enqueue them.
+            if (SnapshotDrawBuffers.Available) Frame?.Draws.Clear();
+            Frame?.Dispose();
+        }
         finally { if (released != null) ReturnWorkspace(released); }
     }
 }
