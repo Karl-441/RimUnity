@@ -1,6 +1,21 @@
 ﻿param([Parameter(Mandatory)][string]$GameRoot, [Parameter(Mandatory)][string]$HarmonyPath, [string]$WorkshopRoot = '')
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
+function Read-GitBlob {
+    # 按字节从 git 取出历史文件：PowerShell 管道会破坏二进制，所以直接拷 StandardOutput 流。
+    param([string]$Repository, [string]$Revision, [string]$Path, [string]$Destination)
+    $info = New-Object System.Diagnostics.ProcessStartInfo
+    $info.FileName = 'git'
+    $info.Arguments = "cat-file blob $Revision`:$Path"
+    $info.WorkingDirectory = $Repository
+    $info.UseShellExecute = $false
+    $info.RedirectStandardOutput = $true
+    $process = [System.Diagnostics.Process]::Start($info)
+    $stream = [IO.File]::Create($Destination)
+    try { $process.StandardOutput.BaseStream.CopyTo($stream) } finally { $stream.Dispose() }
+    $process.WaitForExit()
+    if ($process.ExitCode -ne 0 -or (Get-Item -LiteralPath $Destination).Length -lt 1024) { throw "无法从 git 读取历史文件：$Revision`:$Path" }
+}
 $fixtures = Join-Path ([IO.Path]::GetTempPath()) ('RimUnity/Embedded-' + [Guid]::NewGuid().ToString('N'))
 foreach ($name in @('A','B')) {
     $about = Join-Path $fixtures "$name/About"
@@ -12,6 +27,15 @@ if ($LASTEXITCODE -ne 0) { throw '内容程序集接入构建失败。' }
 & dotnet build (Join-Path $PSScriptRoot 'EmbeddedTests/EmbeddedTests.csproj') -c Release --nologo "-p:RimWorldDir=$GameRoot" "-p:HarmonyPath=$HarmonyPath"
 if ($LASTEXITCODE -ne 0) { throw '离线验证程序编译失败。' }
 & (Join-Path $PSScriptRoot 'Copy-RuntimePackage.ps1') -Destination (Join-Path $fixtures 'Standalone')
+# 同名程序集重复（issue #7 的真实场景）：旧版残留的 RimUnity.dll 与新版本并存，
+# 原版会把两者都登记进 loadedAssemblies；选择器必须给出可读的双语错误，而不是 Single 抛裸异常。
+$duplicateRoot = Join-Path $fixtures 'Duplicate'
+Copy-Item -LiteralPath (Join-Path $fixtures 'Standalone') -Destination $duplicateRoot -Recurse
+$duplicateDll = Join-Path $duplicateRoot '1.7/Assemblies/old/RimUnity.dll'
+[IO.Directory]::CreateDirectory((Split-Path -Parent $duplicateDll)) | Out-Null
+Read-GitBlob -Repository $repo -Revision '1d10c5570219710a8f93b0edb28b8090fb34c404' -Path '1.7/Assemblies/RimUnity.dll' -Destination $duplicateDll
+& dotnet (Join-Path $PSScriptRoot 'EmbeddedTests/bin/Release/net10.0/EmbeddedTests.dll') $repo $GameRoot $HarmonyPath $fixtures 'duplicate-runtime'
+if ($LASTEXITCODE -ne 0) { throw '离线验证失败：duplicate-runtime' }
 & dotnet build (Join-Path $PSScriptRoot 'EmbeddedTests/Fixtures/Ordinary/Ordinary.csproj') -c Release --nologo "-p:RimWorldDir=$GameRoot" "-p:FixtureRoot=$fixtures" "-p:RuntimeDirectory=$repo/1.7/Assemblies"
 if ($LASTEXITCODE -ne 0) { throw '普通 DLL 兼容夹具编译失败。' }
 foreach ($scenario in @('workshop-first','workshop-last','ordinary-workshop','renamed-runtime-provider','incomplete-runtime-provider','ambiguous-runtime-provider','missing-runtime-resources','ordinary-standalone','ordinary-standalone-only','standalone-only','single','duplicates','reverse','standalone-first','standalone-middle','standalone-last','scale')) {
@@ -36,9 +60,8 @@ $legacyRevision = $legacy.Revision
 $legacyRoot = Join-Path $fixtures $legacy.Name
 [IO.Directory]::CreateDirectory($legacyRoot) | Out-Null
 foreach ($name in @('EmbeddedBootstrap.cs','RuntimeSelection.cs','RuntimePayload.cs','DeferredContent.cs')) {
-    $source = & git -c "safe.directory=$($repo.Replace('\','/'))" -C $repo show ('{0}:Source/RimUnity.Embedded/{1}' -f $legacyRevision,$name)
-    if ($LASTEXITCODE -ne 0) { throw "无法读取固定历史加载器：$legacyRevision/$name" }
-    [IO.File]::WriteAllLines((Join-Path $legacyRoot $name), [string[]]$source, [Text.UTF8Encoding]::new($false))
+    # 按字节取：主机代码页不是 UTF-8 时，`& git show` 的文本解码会把中文注释和下一行粘在一起（CS1014）。
+    Read-GitBlob -Repository $repo -Revision $legacyRevision -Path "Source/RimUnity.Embedded/$name" -Destination (Join-Path $legacyRoot $name)
 }
 $legacyProject = @"
 <Project Sdk="Microsoft.NET.Sdk">

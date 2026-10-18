@@ -40,7 +40,7 @@ internal static class RuntimeSelection
         if (standaloneMod != null)
         {
             //独立版已由原版加载，必须共用其类型，不能再加载或替换第二套运行时。
-            runtime = standaloneMod.assemblies.loadedAssemblies.Single(a => a.GetName().Name == "RimUnity");
+            runtime = SelectOwnedRuntime(standaloneMod, standaloneMod.assemblies.loadedAssemblies);
             string protocol = runtime.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == "RimUnityProtocol")?.Value;
             var version = Version.Parse(runtime.GetCustomAttribute<AssemblyFileVersionAttribute>().Version);
             if (protocol != "1" || version < content.Minimum)
@@ -78,7 +78,7 @@ internal static class RuntimeSelection
             deferred = true;
             foreach (string name in Names)
                 selected.Owner.assemblies.loadedAssemblies.Add(Assembly.LoadFrom(Path.Combine(root, "Assemblies", name + ".dll")));
-            runtime = selected.Owner.assemblies.loadedAssemblies.Single(a => a.GetName().Name == "RimUnity");
+            runtime = SelectOwnedRuntime(selected.Owner, selected.Owner.assemblies.loadedAssemblies);
             selected.Owner.foldersToLoadDescendingOrder.Add(root);
             UnityStubs.ContentPacks.MountLoadFolder(root);
             ShaderDefRegistry.RegisterShaderDirectories();
@@ -123,5 +123,20 @@ internal static class RuntimeSelection
             if (matches.Length != 1 || !owned.Contains(matches[0]))
                 throw new InvalidOperationException("RimUnity assembly ownership conflict: " + name);
         }
+    }
+
+    //取该模组名下唯一的 RimUnity 程序集；同名程序集多于一个时给双语错误并列出文件。
+    //原版不保证一个模组里同名程序集唯一（Assemblies/**/*.dll 递归加载、不去重），
+    //直接 Single 会抛裸 InvalidOperationException，日志里看不出是哪个文件冲突（issue #7）。
+    private static Assembly SelectOwnedRuntime(ModContentPack owner, IEnumerable<Assembly> owned)
+    {
+        var matches = owned.Where(a => a.GetName().Name == "RimUnity").ToArray();
+        if (matches.Length == 1) return matches[0];
+        string files = matches.Length == 0
+            ? "（没有找到）/ none found"
+            : string.Join(", ", matches.Select(a => a.Location).Distinct(StringComparer.OrdinalIgnoreCase));
+        throw new InvalidOperationException(
+            $"模组 {owner.PackageId} 里名为 RimUnity 的程序集登记了 {matches.Length} 次（文件：{files}）。请删除重复或残留的 DLL 后重启游戏。"
+            + $" / Mod {owner.PackageId} registered {matches.Length} assemblies named RimUnity (files: {files}). Remove the duplicate or stale DLL and restart.");
     }
 }

@@ -40,7 +40,8 @@ internal static class Harness
         bool missingResources = scenario == "missing-runtime-resources";
         bool ambiguous = scenario == "ambiguous-runtime-provider";
         string standaloneId = renamed ? "manager.renamed.provider__custom_suffix" : "Chezhou.RimUnity";
-        var independent = Mod(Path.Combine(fixtures, scenario.StartsWith("actual-workshop") ? "Workshop" : "Standalone"),
+        string fixtureDir = scenario == "duplicate-runtime" ? "Duplicate" : scenario.StartsWith("actual-workshop") ? "Workshop" : "Standalone";
+        var independent = Mod(Path.Combine(fixtures, fixtureDir),
             standaloneId.ToLowerInvariant() + (workshop ? "_steam" : ""), standaloneId);
         var ordinary = Mod(Path.Combine(fixtures, "Ordinary"), "test.ordinary");
         var mods = scenario switch
@@ -58,6 +59,7 @@ internal static class Harness
             "ordinary-standalone-only" => new[] { independent, ordinary },
             "standalone-newer-payload" => new[] { independent, a, b },
             "standalone-conflicting-payloads" => new[] { independent, a, b },
+            "duplicate-runtime" => new[] { independent, a, b },
             "standalone-first" => new[] { independent, a, b },
             "standalone-middle" => new[] { a, independent, b },
             "standalone-last" => new[] { b, a, independent },
@@ -73,12 +75,26 @@ internal static class Harness
                 unrelated.assemblies.loadedAssemblies.Add(typeof(Harness).Assembly);
                 active.Add(unrelated);
             }
-        //等价于原版 ReloadAll：先 LoadFrom，再 GetTypes，最后登记。
+        //等价于原版 ReloadAll：递归取 Assemblies/**/*.dll，先 LoadFrom，再 GetTypes，最后登记。
+        //递归是原版行为（GetAllFilesForModPreserveOrder 只按模组内相对路径去重），
+        //重复/残留的同名程序集正是通过这条路径进到 loadedAssemblies 的（issue #7）。
         foreach (var mod in mods)
-        foreach (string file in Directory.GetFiles(Path.Combine(mod.foldersToLoadDescendingOrder[0], "Assemblies"), "*.dll"))
+        foreach (string file in Directory.GetFiles(Path.Combine(mod.foldersToLoadDescendingOrder[0], "Assemblies"), "*.dll", SearchOption.AllDirectories))
         {
-            var assembly = Assembly.LoadFrom(file);
-            assembly.GetTypes();
+            Assembly assembly;
+            try
+            {
+                assembly = Assembly.LoadFrom(file);
+                assembly.GetTypes();
+            }
+            catch (FileLoadException)
+            {
+                // Mono 的 LoadFrom 对同名同版本会直接返回已加载实例；.NET 的 ALC 则抛。
+                // 这里还原游戏实际行为：仍登记同一实例，让重复在 loadedAssemblies 里可见（issue #7）。
+                var identity = AssemblyName.GetAssemblyName(file);
+                assembly = AppDomain.CurrentDomain.GetAssemblies().First(a =>
+                    a.GetName().Name == identity.Name && a.GetName().Version == identity.Version);
+            }
             mod.assemblies.loadedAssemblies.Add(assembly);
         }
         if (missingResources) independent.foldersToLoadDescendingOrder.Clear();
@@ -116,9 +132,9 @@ internal static class Harness
         LoadedModManager.LoadModXML();
         Console.WriteLine($"TIMING {scenario}: {active.Count} active mods; bootstrap {timer.Elapsed.TotalMilliseconds:F2} ms");
         LoadedModManager.LoadModXML();
-        if (scenario == "incompatible-standalone" || scenario == "conflict" || incomplete || ambiguous || missingResources)
+        if (scenario == "incompatible-standalone" || scenario == "conflict" || incomplete || ambiguous || missingResources || scenario == "duplicate-runtime")
         {
-            string expected = missingResources ? "runtime resources are missing" : incomplete ? "assembly ownership conflict" : ambiguous ? "runtime owner is ambiguous" : scenario == "conflict" ? "Conflicting embedded payloads" : "Update standalone RimUnity";
+            string expected = missingResources ? "runtime resources are missing" : incomplete ? "assembly ownership conflict" : ambiguous ? "runtime owner is ambiguous" : scenario == "conflict" ? "Conflicting embedded payloads" : scenario == "duplicate-runtime" ? "名为 RimUnity 的程序集" : "Update standalone RimUnity";
             Assert(errors.Count == 1 && errors[0].Contains(expected), "explicit error: " + scenario);
             Assert(mounted == 0 && !Directory.Exists(cache), "failure never mounts or extracts fallback resources");
             Assert(runtimeInitializations == (standalone ? 1 : 0), "no extra runtime on failure");
