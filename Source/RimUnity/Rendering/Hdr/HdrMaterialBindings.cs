@@ -20,6 +20,10 @@ internal static class HdrMaterialBindings
     private static readonly AccessTools.FieldRef<MaterialBinding, long> DataVersion =
         AccessTools.FieldRefAccess<MaterialBinding, long>("resolvedDataVersion");
 
+    //Shared by immutable derived results and repopulated snapshot-owned buffers. Each capture
+    //must invalidate host uploads even when its source material identity/version is unchanged.
+    internal static void Stamp(MaterialBinding binding) => DataVersion(binding) = Interlocked.Decrement(ref nextDataVersion);
+
     //弱键不延长源材质生命周期；颜色和只读深度分别缓存，避免相互覆盖状态。
     internal static MaterialBinding Get(MaterialBinding source, Waylith.Rendering.Shader shader, bool readOnlyDepth)
     {
@@ -39,7 +43,7 @@ internal static class HdrMaterialBindings
             shader, source.MaterialLayout, source.Uniforms, source.Resources, source.RenderQueue,
             key, state, source.WrapModeOverride, source.UsesGlobals);
         binding.UpdateStorageArrays(source.StorageArrays);
-        DataVersion(binding) = Interlocked.Decrement(ref nextDataVersion);
+        Stamp(binding);
         var entry = new Entry(source.ResolvedDataVersion, source.MaterialVersion, source.PipelineState, source.ShaderVariant,
             source.RenderQueue, source.UsesGlobals, binding);
         if (readOnlyDepth) variants.ReadOnlyDepth = entry; else variants.Color = entry;

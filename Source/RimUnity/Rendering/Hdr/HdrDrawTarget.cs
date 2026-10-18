@@ -42,10 +42,11 @@ internal sealed unsafe partial class HdrDrawTarget : IDisposable
         using var spike = Diagnostics.ParticleSpikeCapture.Measure("HDR.Record");
         using var group = HdrDrawFrame.Shell(snapshot.Frame, MeshDrawFrame.RentList(), MeshDrawFrame.RentList());
         int groupMode = -1;
-        foreach (var draw in snapshot.Frame.Draws)
+        for (int i = 0; i < snapshot.Frame.Draws.Count; i++)
         {
+            var draw = snapshot.Frame.Draws[i];
             if (draw.RenderQueue < queueMin || draw.RenderQueue >= queueMax) continue;
-            int mode = snapshot.Linear.Contains(draw) ? 1 : 0;
+            int mode = snapshot.IsLinear(i) ? 1 : 0;
             if (groupMode != -1 && mode != groupMode)
             {
                 Draw(in ctx, scene, group, groupMode);

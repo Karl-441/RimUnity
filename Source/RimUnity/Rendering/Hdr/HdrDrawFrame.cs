@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using HarmonyLib;
 using Waylith.Rendering;
 
@@ -13,7 +14,72 @@ internal sealed class HdrDrawFrame : IDisposable
     internal static readonly string MetadataLayout;
     private static readonly Action<MeshDrawFrame, MeshDrawFrame> CopyMetadata = FrameMetadataCopier.Build<MeshDrawFrame>(out MetadataLayout);
     internal readonly MeshDrawFrame Frame;
-    internal readonly HashSet<FinalDrawItem> Linear = new();
+    private Workspace workspace;
+    private int disposed;
+    //Only empty CPU buffers survive between snapshots/games. No material or draw references
+    //remain in the idle pool. A lease belongs to one snapshot until its render-frame disposal.
+    private sealed class Workspace
+    {
+        internal readonly List<FinalDrawItem> Dynamic = new();
+        internal readonly Dictionary<MaterialBinding, MaterialBinding> Bindings = new();
+        internal readonly List<byte> Linear = new();
+        //Owned binding buffers, not a material-result cache: every lease repopulates all values.
+        //Only immutable numeric identity remains after Clear; shaders/layouts/textures are dropped.
+        internal readonly List<MaterialBinding> BindingSlots = new();
+        private int usedBindings;
+        internal int Epoch;
+        internal MaterialBinding Capture(MaterialBinding source, Waylith.Rendering.Shader shader, ShaderVariantKey key, PipelineState state)
+        {
+            int slot = usedBindings++;
+            MaterialBinding binding = slot < BindingSlots.Count ? BindingSlots[slot] : null;
+            //The host fixes these identities in the constructor; Update cannot change them.
+            if (binding == null || binding.Id != source.Id || binding.MaterialId != source.MaterialId || binding.ShaderVariantId != VariantId(key))
+            {
+                binding = new MaterialBinding(source.Id, source.MaterialId, source.MaterialVersion, source.DebugName,
+                    shader, source.MaterialLayout, source.Uniforms, source.Resources, source.RenderQueue,
+                    key, state, source.WrapModeOverride, source.UsesGlobals);
+                if (slot == BindingSlots.Count) BindingSlots.Add(binding); else BindingSlots[slot] = binding;
+            }
+            else binding.Update(source.MaterialVersion, source.DebugName, shader, source.MaterialLayout, source.Uniforms,
+                source.Resources, source.RenderQueue, key, state, source.WrapModeOverride, source.UsesGlobals);
+            binding.UpdateStorageArrays(source.StorageArrays);
+            HdrMaterialBindings.Stamp(binding);
+            return binding;
+        }
+        internal void Clear()
+        {
+            Dynamic.Clear(); Bindings.Clear(); Linear.Clear(); usedBindings = 0;
+            foreach (var binding in BindingSlots)
+            {
+                binding.Update(0, null, null, null, default, default, 0, default, default, null, false);
+                binding.UpdateStorageArrays(Array.Empty<MaterialStorageArray>());
+            }
+        }
+        internal bool CanRetain => Dynamic.Capacity <= 8192 && Linear.Capacity <= 8192 && Bindings.EnsureCapacity(0) <= 2048 && BindingSlots.Capacity <= 2048;
+    }
+    private static readonly Func<ShaderVariantKey, long> VariantId = AccessTools.Method(
+        AccessTools.TypeByName("Waylith.Rendering.ShaderVariantIdRegistry"), "GetOrCreateId").CreateDelegate<Func<ShaderVariantKey, long>>();
+    private static readonly object WorkspaceGate = new();
+    private static readonly Stack<Workspace> Workspaces = new(8);
+    private static int workspaceEpoch;
+    private static Workspace RentWorkspace()
+    {
+        lock (WorkspaceGate)
+        {
+            var result = Workspaces.Count != 0 ? Workspaces.Pop() : new Workspace();
+            result.Epoch = workspaceEpoch;
+            return result;
+        }
+    }
+    private static void ReturnWorkspace(Workspace value)
+    {
+        value.Clear();
+        if (!value.CanRetain) return;
+        lock (WorkspaceGate) if (value.Epoch == workspaceEpoch && Workspaces.Count < 8) Workspaces.Push(value);
+    }
+    //Called only at graphics shutdown, after the host has retired its in-flight frames.
+    internal static void ClearWorkspaces() { lock (WorkspaceGate) { workspaceEpoch++; Workspaces.Clear(); } }
+    internal bool IsLinear(int index) => workspace.Linear[index] != 0;
     private delegate FinalDrawItem RentDraw(System.Numerics.Matrix4x4 matrix, byte passId, MeshDrawGeometry mesh, MaterialBinding binding,
         bool hasOverride, in MaterialUniformBytes uniforms, in MaterialTextureResourceSet<Waylith.Rendering.Texture> resources,
         int order, int queue, InstancedDrawInfo instancing, int layer, ushort hostOrder, InstanceStorageBinding[] storage);
@@ -38,15 +104,17 @@ internal sealed class HdrDrawFrame : IDisposable
 
     internal HdrDrawFrame(MeshDrawFrame source, int mask = -1, bool readOnlyDepth = false)
     {
-        Frame = Shell(source, MeshDrawFrame.RentList(), MeshDrawFrame.RentList());
-        var dynamic = new List<FinalDrawItem>();
-        foreach (var item in source.Draws) if (ShouldCapture(item, mask, readOnlyDepth)) dynamic.Add(item);
-        dynamic.Sort((a, b) => a.SortKey.CompareTo(b.SortKey));
-        var persistent = source.PersistentDraws;
-        var bindings = new Dictionary<MaterialBinding, MaterialBinding>();
-        int p = 0, d = 0;
+        ArgumentNullException.ThrowIfNull(source);
+        workspace = RentWorkspace();
         try
         {
+            Frame = Shell(source, MeshDrawFrame.RentList(), MeshDrawFrame.RentList());
+            var dynamic = workspace.Dynamic;
+            foreach (var item in source.Draws) if (ShouldCapture(item, mask, readOnlyDepth)) dynamic.Add(item);
+            dynamic.Sort((a, b) => a.SortKey.CompareTo(b.SortKey));
+            var persistent = source.PersistentDraws;
+            var bindings = workspace.Bindings;
+            int p = 0, d = 0;
             //与宿主合并顺序一致：键相等时先画持久绘制项。
             while (p < persistent.Count || d < dynamic.Count)
             {
@@ -64,28 +132,34 @@ internal sealed class HdrDrawFrame : IDisposable
                     var variant = original.ShaderVariant;
                     var key = new ShaderVariantKey(shader, variant.DynamicKeywordKeyId, variant.DynamicKeywordKey,
                         variant.UseTexture, variant.OutlineMrt, variant.Instanced);
-                    binding = new MaterialBinding(original.Id, original.MaterialId, original.MaterialVersion, original.DebugName,
-                        shader, original.MaterialLayout, original.Uniforms, original.Resources, original.RenderQueue,
-                        key, state, original.WrapModeOverride, original.UsesGlobals);
-                    binding.UpdateStorageArrays(original.StorageArrays);
+                    binding = workspace.Capture(original, shader, key, state);
                     bindings.Add(original, binding);
                 }
                 var copy = Rent(item.Matrix, item.PassId, item.Mesh, binding, true, in item.Uniforms, in item.Resources,
                     Frame.Draws.Count, item.RenderQueue, item.Instancing, item.Layer, 0, item.Storage);
                 SortKey(copy) = item.SortKey;
-                Frame.Draws.Add(copy);
-                if (linear) Linear.Add(copy);
+                //If list growth fails, the rented item has not acquired a frame owner yet.
+                try { Frame.Draws.Add(copy); }
+                catch { FinalDrawItem.Return(copy); throw; }
+                workspace.Linear.Add(linear ? (byte)1 : (byte)0);
             }
         }
-        catch { Frame.Dispose(); throw; }
+        catch { Dispose(); throw; }
     }
 
     //借用的 PersistentDraws 不归临时帧销毁，所有绘制项只由快照释放一次。
     internal static MeshDrawFrame Shell(MeshDrawFrame source, List<FinalDrawItem> draws, List<FinalDrawItem> persistent)
     {
         var frame = new MeshDrawFrame(source.FrameNumber, source.View, draws, persistent, source.SunDirection);
-        CopyMetadata(source, frame);
-        return frame;
+        try { CopyMetadata(source, frame); return frame; }
+        catch { frame.Dispose(); throw; }
     }
-    public void Dispose() => Frame.Dispose();
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        var released = workspace;
+        workspace = null;
+        try { Frame?.Dispose(); }
+        finally { if (released != null) ReturnWorkspace(released); }
+    }
 }
