@@ -1,0 +1,11 @@
+# 文本在仓库和工作区统一使用 LF，避免本机 autocrlf 设置影响检出结果。
+* text=auto eol=lf
+
+# Windows 批处理脚本在工作区使用 CRLF。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制文件保持原始字节，不参与文本差异与合并。
+*.png binary
+*.dll binary
+*.zip binary
