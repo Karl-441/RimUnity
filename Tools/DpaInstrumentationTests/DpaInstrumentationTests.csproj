@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><LangVersion>latest</LangVersion>
+    <DpaRoot Condition="'$(DpaRoot)' == ''">D:/SteamLibrary/steamapps/common/RimWorld/Mods/Dubs Performance Analyzer/Source/Profiling</DpaRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Condition="'$(DpaSource)' != ''" Include="$(DpaSource)/H_RimUnity.cs;$(DpaSource)/RimUnityTiming.cs;$(DpaSource)/RimUnityProbeBridge.cs;$(DpaSource)/RimUnitySortStages.cs;$(DpaSource)/RimUnitySubmitStages.cs;$(DpaSource)/ClipboardReport.cs" />
+    <Compile Condition="'$(DpaSource)' == ''" Include="$(DpaRoot)/Patches/Update/H_RimUnity.cs;$(DpaRoot)/Patches/Update/RimUnitySortStages.cs;$(DpaRoot)/Patches/Update/RimUnitySubmitStages.cs;$(DpaRoot)/Statistics/RimUnityTiming.cs;$(DpaRoot)/Statistics/RimUnityProbeBridge.cs;$(DpaRoot)/GUI/ClipboardReport.cs" />
+    <Compile Include="../../Source/RimUnity/Diagnostics/DpaDiagnostics.cs" Link="DpaDiagnostics.cs" />
+    <Reference Include="0Harmony" HintPath="D:/SteamLibrary/steamapps/workshop/content/294100/2009463077/1.7/Assemblies/0Harmony.dll" />
+  </ItemGroup>
+</Project>

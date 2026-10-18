@@ -5,6 +5,7 @@
     <HarmonyPath Condition="'$(HarmonyPath)' == ''">$(HARMONY_PATH)</HarmonyPath>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../Source/RimUnity/Diagnostics/DpaDiagnostics.cs" Link="Runtime/DpaDiagnostics.cs" />
     <Compile Include="../../Source/RimUnity/Rendering/Hdr/HdrDrawFrame.cs" Link="Runtime/HdrDrawFrame.cs" />
     <Compile Include="../../Source/RimUnity/Rendering/Hdr/FrameMetadataCopier.cs" Link="Runtime/FrameMetadataCopier.cs" />
     <Compile Include="../../Source/RimUnity/Rendering/Hdr/HdrMaterialBindings.cs" Link="Runtime/HdrMaterialBindings.cs" />

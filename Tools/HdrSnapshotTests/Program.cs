@@ -33,6 +33,7 @@ internal static class Program
         Equivalence();
         Lifetimes();
         BindingReuse();
+        IdentityReuse();
         Failures();
         Limits();
         CrossThreadRelease();
@@ -189,6 +190,67 @@ internal static class Program
         Check(!ReferenceEquals(newVariant.Frame.Draws[0].Binding, captured)
             && newVariant.Frame.Draws[0].Binding.ShaderVariantId == replacement.ShaderVariantId,
             "shader variant changes replace the immutable binding identity");
+    }
+    private static void IdentityReuse()
+    {
+        HdrDrawFrame.ClearWorkspaces();
+        using var source = Source(0);
+        var shader = MakeShader();
+        var materials = new[] { MakeBinding(301, shader), MakeBinding(302, shader), MakeBinding(303, shader), MakeBinding(304, shader) };
+        var draws = materials.Select((b, i) => MakeDraw(b, i, 0, 29)).ToArray();
+        object work = null;
+        int[] order = { 0, 2, 3 };
+        void Select(int[] selected)
+        {
+            source.Draws.Clear();
+            foreach (int i in selected) source.Draws.Add(draws[i]);
+        }
+        Select(order);
+        using (var warm = new HdrDrawFrame(source)) work = Work(warm);
+        Select(new[] { 0, 1, 2, 3 });
+        using (var warm = new HdrDrawFrame(source)) { }
+        var slots = (ICollection)AccessTools.Field(work.GetType(), "BindingSlots").GetValue(work);
+        Check(slots.Count == 4, "one buffer per historical identity after insertion warmup");
+        RimUnity.Diagnostics.DpaDiagnostics.SetEnabled(true);
+        RimUnity.Diagnostics.DpaDiagnostics.Reset();
+        for (int i = 0; i < 100; i++)
+        {
+            Select(i % 2 == 0 ? new[] { 3, 1, 0, 2 } : order);
+            using var actual = new HdrDrawFrame(source);
+            using var expected = new BaselineHdrDrawFrame(source);
+            Check(actual.Frame.Draws.Select(d => d.Binding.Id).SequenceEqual(expected.Frame.Draws.Select(d => d.Binding.Id)), "identity reuse preserves sorted/filter order after insertion/removal");
+            Check(slots.Count == 4, "reordering and disappearance do not recreate historical binding buffers");
+        }
+        var report = new System.Text.StringBuilder(); RimUnity.Diagnostics.DpaDiagnostics.AppendReport(report);
+        Check(report.ToString().Contains("HDR\t350\t0\t0"), "diagnostics distinguish reuse without new identities");
+        //Separate source objects may intentionally share immutable IDs but have different texture data.
+        var duplicate = MakeBinding(301, shader);
+        var duplicateDraw = MakeDraw(duplicate, 9, 0, 29);
+        Select(new[] { 0 }); source.Draws.Add(duplicateDraw);
+        using (var active = new HdrDrawFrame(source))
+        {
+            Check(!ReferenceEquals(active.Frame.Draws[0].Binding, active.Frame.Draws[1].Binding), "same numeric identity receives distinct leased buffers for distinct sources");
+            Check(!active.Frame.Draws[0].Binding.Resources.Equals(active.Frame.Draws[1].Binding.Resources), "same identity sources retain independent resources");
+        }
+        Check(slots.Count == 5 && Cleared(work), "duplicate identity buffers retire without retaining resources");
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) { RimUnity.Diagnostics.DpaDiagnostics.Binding(false, 0); var t = RimUnity.Diagnostics.DpaDiagnostics.BeginSubmit(); RimUnity.Diagnostics.DpaDiagnostics.EndSubmit(t, i, 4, 6, 3); }
+        Check(GC.GetAllocatedBytesForCurrentThread() == before, "enabled numeric diagnostics allocate no per-call objects");
+        RimUnity.Diagnostics.DpaDiagnostics.SetEnabled(false);
+        report.Clear(); RimUnity.Diagnostics.DpaDiagnostics.AppendReport(report); string stopped = report.ToString();
+        RimUnity.Diagnostics.DpaDiagnostics.Binding(false, 0);
+        report.Clear(); RimUnity.Diagnostics.DpaDiagnostics.AppendReport(report);
+        Check(report.ToString() == stopped, "disabled diagnostics stop recording and preserve report");
+        source.Draws.Clear(); foreach (var draw in draws) FinalDrawItem.Return(draw); FinalDrawItem.Return(duplicateDraw);
+        HdrDrawFrame.ClearWorkspaces();
+        //Historical identities count toward the limit even when every snapshot contains one draw.
+        for (int i = 0; i < 2049; i++)
+        {
+            source.Draws.Add(MakeDraw(MakeBinding(10000 + i, shader), 0, 0, 29));
+            using (var snapshot = new HdrDrawFrame(source)) { }
+            FinalDrawItem.Return(source.Draws[0]); source.Draws.Clear();
+        }
+        Check(PoolCount() == 0, "historical binding identities cannot grow beyond 2048 in an idle workspace");
     }
     private static void Failures()
     {

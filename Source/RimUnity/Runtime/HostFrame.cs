@@ -92,6 +92,8 @@ internal static class HostFrame
         //宿主已等待渲染线程和 GPU 并释放管线，先丢弃取消的加载快照，再处理片段释放回调。
         Rendering.LoadingWarmup.Shutdown(app);
         Rendering.HdrDrawFrame.ClearWorkspaces();
+        Diagnostics.DpaDiagnostics.SetEnabled(false);
+        Diagnostics.DpaDiagnostics.Reset();
         ScreenEfx.EfxPlayer.Clear();
         ScreenEfx.EfxPlayer.Drain();
         ScreenEfx.EfxFrameBuilder.Shutdown();

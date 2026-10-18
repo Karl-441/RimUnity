@@ -26,21 +26,54 @@ internal sealed class HdrDrawFrame : IDisposable
         //Owned binding buffers, not a material-result cache: every lease repopulates all values.
         //Only immutable numeric identity remains after Clear; shaders/layouts/textures are dropped.
         internal readonly List<MaterialBinding> BindingSlots = new();
-        private int usedBindings;
+        private readonly record struct Identity(long Id, long MaterialId, long VariantId);
+        private sealed class Bucket
+        {
+            internal readonly List<MaterialBinding> Slots = new();
+            internal int Used;
+        }
+        private readonly Dictionary<Identity, Bucket> identities = new();
+        private readonly List<Bucket> activeBuckets = new();
+        internal bool Bloom;
         internal int Epoch;
         internal MaterialBinding Capture(MaterialBinding source, Waylith.Rendering.Shader shader, ShaderVariantKey key, PipelineState state)
         {
-            int slot = usedBindings++;
-            MaterialBinding binding = slot < BindingSlots.Count ? BindingSlots[slot] : null;
-            //The host fixes these identities in the constructor; Update cannot change them.
-            if (binding == null || binding.Id != source.Id || binding.MaterialId != source.MaterialId || binding.ShaderVariantId != VariantId(key))
+            var identity = new Identity(source.Id, source.MaterialId, VariantId(key));
+            bool firstIdentity = !identities.TryGetValue(identity, out var bucket);
+            if (firstIdentity) identities.Add(identity, bucket = new Bucket());
+            if (bucket.Used == 0) activeBuckets.Add(bucket);
+            int slot = bucket.Used;
+            MaterialBinding binding;
+            if (slot == bucket.Slots.Count)
             {
                 binding = new MaterialBinding(source.Id, source.MaterialId, source.MaterialVersion, source.DebugName,
                     shader, source.MaterialLayout, source.Uniforms, source.Resources, source.RenderQueue,
                     key, state, source.WrapModeOverride, source.UsesGlobals);
-                if (slot == BindingSlots.Count) BindingSlots.Add(binding); else BindingSlots[slot] = binding;
+                //Register ownership before publishing the slot; Clear also covers partial construction.
+                try
+                {
+                    bucket.Slots.Add(binding);
+                    bucket.Used++;
+                    BindingSlots.Add(binding);
+                }
+                catch
+                {
+                    if (bucket.Used == slot) //Not yet owned by the bucket.
+                    {
+                        binding.Update(0, null, null, null, default, default, 0, default, default, null, false);
+                        binding.UpdateStorageArrays(Array.Empty<MaterialStorageArray>());
+                    }
+                    throw;
+                }
+                Diagnostics.DpaDiagnostics.Binding(Bloom, firstIdentity ? 1 : 2);
             }
-            else binding.Update(source.MaterialVersion, source.DebugName, shader, source.MaterialLayout, source.Uniforms,
+            else
+            {
+                binding = bucket.Slots[slot];
+                bucket.Used++;
+                Diagnostics.DpaDiagnostics.Binding(Bloom, 0);
+            }
+            binding.Update(source.MaterialVersion, source.DebugName, shader, source.MaterialLayout, source.Uniforms,
                 source.Resources, source.RenderQueue, key, state, source.WrapModeOverride, source.UsesGlobals);
             binding.UpdateStorageArrays(source.StorageArrays);
             HdrMaterialBindings.Stamp(binding);
@@ -48,25 +81,34 @@ internal sealed class HdrDrawFrame : IDisposable
         }
         internal void Clear()
         {
-            Dynamic.Clear(); Bindings.Clear(); Linear.Clear(); usedBindings = 0;
-            foreach (var binding in BindingSlots)
+            Dynamic.Clear(); Bindings.Clear(); Linear.Clear();
+            foreach (var bucket in activeBuckets)
             {
-                binding.Update(0, null, null, null, default, default, 0, default, default, null, false);
-                binding.UpdateStorageArrays(Array.Empty<MaterialStorageArray>());
+                for (int i = 0; i < bucket.Used; i++)
+                {
+                    var binding = bucket.Slots[i];
+                    binding.Update(0, null, null, null, default, default, 0, default, default, null, false);
+                    binding.UpdateStorageArrays(Array.Empty<MaterialStorageArray>());
+                }
+                bucket.Used = 0;
             }
+            activeBuckets.Clear();
         }
-        internal bool CanRetain => Dynamic.Capacity <= 8192 && Linear.Capacity <= 8192 && Bindings.EnsureCapacity(0) <= 2048 && BindingSlots.Capacity <= 2048;
+        internal bool CanRetain => Dynamic.Capacity <= 8192 && Linear.Capacity <= 8192 && Bindings.EnsureCapacity(0) <= 2048 && BindingSlots.Count <= 2048 && identities.Count <= 2048;
     }
     private static readonly Func<ShaderVariantKey, long> VariantId = AccessTools.Method(
         AccessTools.TypeByName("Waylith.Rendering.ShaderVariantIdRegistry"), "GetOrCreateId").CreateDelegate<Func<ShaderVariantKey, long>>();
     private static readonly object WorkspaceGate = new();
     private static readonly Stack<Workspace> Workspaces = new(8);
     private static int workspaceEpoch;
-    private static Workspace RentWorkspace()
+    private static Workspace RentWorkspace(bool bloom)
     {
         lock (WorkspaceGate)
         {
-            var result = Workspaces.Count != 0 ? Workspaces.Pop() : new Workspace();
+            bool created = Workspaces.Count == 0;
+            var result = created ? new Workspace() : Workspaces.Pop();
+            result.Bloom = bloom;
+            if (created) Diagnostics.DpaDiagnostics.Workspace(bloom, false);
             result.Epoch = workspaceEpoch;
             return result;
         }
@@ -74,7 +116,7 @@ internal sealed class HdrDrawFrame : IDisposable
     private static void ReturnWorkspace(Workspace value)
     {
         value.Clear();
-        if (!value.CanRetain) return;
+        if (!value.CanRetain) { Diagnostics.DpaDiagnostics.Workspace(value.Bloom, true); return; }
         lock (WorkspaceGate) if (value.Epoch == workspaceEpoch && Workspaces.Count < 8) Workspaces.Push(value);
     }
     //Called only at graphics shutdown, after the host has retired its in-flight frames.
@@ -105,7 +147,7 @@ internal sealed class HdrDrawFrame : IDisposable
     internal HdrDrawFrame(MeshDrawFrame source, int mask = -1, bool readOnlyDepth = false)
     {
         ArgumentNullException.ThrowIfNull(source);
-        workspace = RentWorkspace();
+        workspace = RentWorkspace(readOnlyDepth);
         try
         {
             Frame = Shell(source, MeshDrawFrame.RentList(), MeshDrawFrame.RentList());
