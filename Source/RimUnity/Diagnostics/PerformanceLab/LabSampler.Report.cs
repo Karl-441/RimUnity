@@ -11,7 +11,7 @@ namespace RimUnity.Diagnostics;
 //报告保留场景条件与逐帧数据，便于比较不同特效、密度及框架版本。
 internal sealed partial class LabSampler
 {
-    private const string Caveats = "帧间隔包含游戏、其他模组、测试窗口、限帧和等待；不是 GPU 时间。第一条间隔从按钮启动时计时，可能不足完整一帧。托管分配与内存是进程级，包含采样自身开销；未测量显存。提交项不是驱动实际 DrawCall。实例数受并发上限、寿命、每帧 16 个与 8ms 发射预算约束；单次实例化不可中断，预算不是帧耗时保证。达到预算后不追赶积欠发射，实际发射数和限流帧另行记录。资源缓存继续共享；索引扫描不等于冷加载，首次 GPU 上传可能已发生。详细探针开启时会额外影响计时。";
+    private const string Caveats = "帧间隔包含游戏、其他模组、测试窗口、限帧和等待；不是 GPU 时间。第一条间隔可能不足完整一帧。托管分配与内存是进程级，包含采样自身开销；未测量显存。提交项不是驱动实际 DrawCall。固定模式忽略频率和实例寿命，填满实例并预热后才采样，不含创建成本；固定位置与粒子种子不等于逐帧粒子数恒定或位级重放，原有脚本、动画及实际帧间隔仍然影响表现。创建/销毁模式受并发上限、寿命、每帧 16 个与 8ms 发射预算约束；单次实例化不可中断，预算不是帧耗时保证。达到预算后不追赶积欠发射，实际创建数和限流帧另行记录。资源缓存继续共享；索引扫描不等于冷加载，首次 GPU 上传可能已发生。详细探针开启时会额外影响计时。";
     private static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
 
     //分位数只在停止采样后计算，避免每帧排序干扰测量。
@@ -33,7 +33,7 @@ internal sealed partial class LabSampler
             $"P50 {Percentile(.5):F2} · P95 {Percentile(.95):F2} · P99 {Percentile(.99):F2} · 最大 {values[^1]:F2} ms\n" +
             $">33.3ms：{values.Count(v => v > 33.333)} 帧；>100ms：{values.Count(v => v > 100)} 帧\n" +
             $"托管分配 {bytes / 1048576d:F2} MiB（{bytes / Math.Max(.001, Seconds) / 1048576d:F2} MiB/s）\n" +
-            $"GC：{g0}/{g1}/{g2}；播放 {last.Spawned} 次（{last.Spawned / Math.Max(.001, Seconds):F1}/秒）；限流 {last.ThrottledFrames} 帧\n" +
+            $"GC：{g0}/{g1}/{g2}；采样期新建 {last.Spawned} 个实例（{last.Spawned / Math.Max(.001, Seconds):F1}/秒）；限流 {last.ThrottledFrames} 帧\n" +
             $"粒子绘制提交累计：{beforeBatch} → {afterBatch}，减少 {(beforeBatch - afterBatch) * 100d / Math.Max(1, beforeBatch):F1}%（非 GPU 实测 DrawCall）\n" +
             $"工作集起止：{samples[0].WorkingSetBytes / 1048576d:F1} → {last.WorkingSetBytes / 1048576d:F1} MiB";
     }

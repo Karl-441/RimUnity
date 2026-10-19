@@ -50,6 +50,7 @@ internal sealed partial class LabSampler : IDisposable
     internal void Start(int seconds)
     {
         if (!lab.IsCurrent) return;
+        if (!lab.StableReady) { lab.Status = "固定实例仍在建立或预热，完成后会自动开始采样。"; return; }
         Stop("重新开始采样", export: true);
         samples = new Sample[Capacity]; count = 0; submitted = 0; lastReport = null;
         spawnCosts.Clear();
@@ -57,6 +58,8 @@ internal sealed partial class LabSampler : IDisposable
         configuration = JsonSerializer.SerializeToElement(new
         {
             MapSize = "96x96", lab.Concurrency, lab.Rate, lab.Lifetime, lab.Radius, lab.Scale, lab.RotationX,
+            PlaybackMode = lab.FixedInstances ? "FixedInstances" : "CreateDestroy", lab.WarmupSeconds,
+            ParticleSeedsFixed = lab.FixedInstances,
             RequestedSeconds = seconds, MaxNewInstancesPerFrame = 16, SpawnBudgetMs = 8, RandomSeed = 9413,
             PlaybackEnabled = lab.Playing,
             ParticleBatchVertexLimit = ParticleDrawBatch.VertexLimit, ParticleBatchIndexLimit = ParticleDrawBatch.IndexLimit,
