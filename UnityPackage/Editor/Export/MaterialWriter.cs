@@ -107,7 +107,7 @@ namespace RimUnity.Editor
             else data.members.Add(new MemberData { name = "shader", value = new ValueData { kind = "asset", text = resources.AddShader(material, ui, path, cameraUi: cameraUi) } });
             void Put(string name, object value) => data.members.Add(new MemberData { name = name, value = writer.Write(value, path + "." + name) });
             var shader = material.shader;
-            for (int pass = 0; !ui && !cameraUi && pass < material.passCount; pass++)
+            for (int pass = 0; !resources.Options.disableCastShadows && !ui && !cameraUi && pass < material.passCount; pass++)
                 if (IsShadowPass(material, pass))
                 {
                     data.members.Add(new MemberData { name = "shadowCaster", value = new ValueData { kind = "asset",
