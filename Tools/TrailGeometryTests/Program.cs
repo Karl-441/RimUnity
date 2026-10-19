@@ -159,3 +159,32 @@ object nativePass=materialType.GetMethod("GetNativePass").Invoke(plainMaterial,n
 CheckResolved(nativePass,"additional grab pass after property synchronization");
 globalTextureSetter.Invoke(null,new[]{(object)grabId,grabTexture});
 Console.WriteLine("PASS: authored grab sampler resolves after creation, clone, copy, shader switch and additional-pass synchronization without a global binding.");
+
+// Particle trails use a lifetime multiplier, not absolute seconds (pillar-collapse shards).
+var particleSystemType=assembly.GetType("RimUnity.ParticleSystem",true);
+object particleSystem=Activator.CreateInstance(particleSystemType);
+object trailModule=particleSystemType.GetField("trails").GetValue(particleSystem);
+void TrailField(string name,object value)=>trailModule.GetType().GetField(name).SetValue(trailModule,value);
+TrailField("enabled",true); TrailField("ratio",1f); TrailField("inheritParticleColor",false);
+TrailField("sizeAffectsWidth",false); TrailField("worldSpace",false);
+var lifetimeField=trailModule.GetType().GetField("lifetime");
+lifetimeField.SetValue(trailModule,Activator.CreateInstance(lifetimeField.FieldType,new object[]{.05f}));
+var particleType=particleSystemType.GetNestedType("Particle");
+object particle=Activator.CreateInstance(particleType);
+void ParticleField(string name,object value)=>particleType.GetField(name,flags).SetValue(particle,value);
+ParticleField("identity",1UL); ParticleField("randomSeed",1U);
+ParticleField("startLifetime",5f); ParticleField("remainingLifetime",5f);
+ParticleField("position",Activator.CreateInstance(vectorType,0f,0f,0f));
+particleSystemType.GetMethod("RecordTrail",flags).Invoke(particleSystem,new[]{particle});
+var states=(IDictionary)particleSystemType.GetField("trailStates",flags).GetValue(particleSystem);
+object state=states[1UL];var points=(IList)state.GetType().GetField("points",flags).GetValue(state);
+float PointRemaining(int index)=>(float)points[index].GetType().GetField("remaining",flags).GetValue(points[index]);
+if(Math.Abs(PointRemaining(0)-.25f)>.00001f)throw new Exception("Particle trail lifetime must be .05 * 5 seconds, got "+PointRemaining(0));
+particleSystemType.GetMethod("AgeTrails",flags).Invoke(particleSystem,new object[]{.05f});
+ParticleField("position",Activator.CreateInstance(vectorType,1f,0f,0f));
+particleSystemType.GetMethod("RecordTrail",flags).Invoke(particleSystem,new[]{particle});
+if(points.Count!=2 || Math.Abs(PointRemaining(0)-.20f)>.00001f || Math.Abs(PointRemaining(1)-.25f)>.00001f)
+    throw new Exception("Old points must age; freshly recorded points retain their full lifetime.");
+particleSystemType.GetMethod("AgeTrails",flags).Invoke(particleSystem,new object[]{.26f});
+if(points.Count!=0)throw new Exception("Expired trail points retained.");
+Console.WriteLine("PASS: particle trail lifetime follows particle starting lifetime, old/new samples age separately and expired points are removed.");

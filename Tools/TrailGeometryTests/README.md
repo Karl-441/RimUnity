@@ -15,6 +15,8 @@ Checks cover strip/corner/cap winding for straight and left/right paths,
 refraction exclusion from Bloom while retaining the scene pass, layer masks,
 and canonical scene-grab texture resolution through material creation, clones,
 property copies, Shader changes and additional-pass synchronization.
+Particle trail checks also cover lifetime as a fraction of particle starting
+lifetime, separate aging of existing/new samples, and expired-point removal.
 
 The harness checks CPU geometry and resource bindings. GPU appearance still
 requires an in-game check.
