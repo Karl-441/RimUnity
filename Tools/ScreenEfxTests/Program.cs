@@ -9,7 +9,8 @@ internal static class Program
     private static int assertions;
     private static int Main(string[] args)
     {
-        string root = args.Length == 0 ? "D:/SteamLibrary/steamapps/common/RimWorld1.7" : args[0];
+        string root = args.Length > 0 ? args[0] : Environment.GetEnvironmentVariable("RIMWORLD_DIR");
+        if (string.IsNullOrEmpty(root)) throw new ArgumentException("用法：ScreenEfxTests <游戏目录>，或先设置环境变量 RIMWORLD_DIR。");
         AssemblyLoadContext.Default.Resolving += (_, name) =>
         {
             string path = Path.Combine(root, name.Name + ".dll");
