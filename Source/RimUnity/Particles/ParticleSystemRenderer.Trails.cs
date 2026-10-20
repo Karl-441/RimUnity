@@ -11,6 +11,7 @@ public sealed partial class ParticleSystemRenderer
     //分别遍历两种容器，避免经 IEnumerable 装箱枚举器。
     private void DrawTrails(ParticleSystem system, Camera camera)
     {
+        using var cpu = Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.TrailGeometry);
         ClearMesh();
         var module = system.trails;
         bool ribbon = module.mode == ParticleSystemTrailMode.Ribbon;

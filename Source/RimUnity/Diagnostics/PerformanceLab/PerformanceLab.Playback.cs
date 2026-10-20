@@ -8,12 +8,17 @@ using Verse;
 
 namespace RimUnity.Diagnostics;
 
-//有上限的连续实例化用于测量真实加载与销毁路径，不改写模板参数。
+//调试负载分为固定实例与持续创建/销毁两种模式；参数覆盖仅作用于测试克隆。
 internal sealed partial class PerformanceLab
 {
     internal int Concurrency = 20;
     internal float Rate = 5, Lifetime = 5, Radius = 8, Scale = 1, RotationX;
     internal int SampleSeconds = 60;
+    internal bool FixedInstances = true;
+    internal float WarmupSeconds = 10;
+    private bool sampleAfterWarmup;
+    private double warmupUntil = double.PositiveInfinity;
+    internal bool StableReady => !FixedInstances || Playing && live.Count == Concurrency && Now >= warmupUntil;
     internal bool Playing { get; private set; }
     internal int Spawned { get; private set; }
     internal int ThrottledFrames { get; private set; }
@@ -36,17 +41,21 @@ internal sealed partial class PerformanceLab
         StopPlayback();
         sequence.Clear(); sequence.AddRange(Effects.Where(e => e.Selected));
         if (sequence.Count == 0) { Status = "请先在特效列表勾选至少一个特效。"; return; }
+        if (FixedInstances && sequence.Count > Concurrency) { Status = "固定实例总数少于选中特效数，请增加实例数或减少勾选。"; return; }
         cursor = Spawned = ThrottledFrames = 0;
         random = new System.Random(9413);
         due = Now; Playing = true;
-        Status = "轮播 " + sequence.Count + " 个特效；达到并发上限后等待旧实例结束。";
-        Sampler.Start(SampleSeconds);
+        warmupUntil = double.PositiveInfinity;
+        sampleAfterWarmup = FixedInstances;
+        Status = FixedInstances ? "正在建立固定实例，填满后预热，再开始采样。" : "轮播 " + sequence.Count + " 个特效；达到并发上限后等待旧实例结束。";
+        if (!FixedInstances) Sampler.Start(SampleSeconds);
     }
 
     //暂停发射并清空已有实例，仍保留面板与测试地图。
     internal void StopPlayback()
     {
         Playing = false;
+        sampleAfterWarmup = false; warmupUntil = double.PositiveInfinity;
         foreach (var effect in live) if (effect.Root != null) RimUnity.Object.DestroyImmediate(effect.Root);
         live.Clear(); sequence.Clear();
     }
@@ -61,6 +70,8 @@ internal sealed partial class PerformanceLab
             for (int i = live.Count - 1; i >= 0; i--)
             {
                 var effect = live[i];
+                if (Playing && FixedInstances && (effect.Root == null || !effect.Root.activeInHierarchy))
+                    throw new InvalidOperationException("固定场景中的特效自行禁用或销毁，已停止测试。请选择可持续播放的预制体。");
                 if (effect.Root != null && now < effect.Expires) continue;
                 if (effect.Root != null) RimUnity.Object.DestroyImmediate(effect.Root);
                 live.RemoveAt(i);
@@ -68,7 +79,7 @@ internal sealed partial class PerformanceLab
             if (!Playing) return;
             int created = 0;
             long started = Stopwatch.GetTimestamp();
-            while (now >= due && live.Count < Concurrency && created < 16)
+            while ((FixedInstances || now >= due) && live.Count < Concurrency && created < 16)
             {
                 var effect = sequence[cursor]; cursor = (cursor + 1) % sequence.Count;
                 bool measure = Sampler.Sampling;
@@ -80,7 +91,18 @@ internal sealed partial class PerformanceLab
                 created++; due += 1d / Rate;
                 if (Stopwatch.GetElapsedTime(started).TotalMilliseconds >= 8) break;
             }
-            if (now >= due)
+            if (FixedInstances)
+            {
+                if (live.Count < Concurrency) { ThrottledFrames++; return; }
+                if (double.IsPositiveInfinity(warmupUntil)) warmupUntil = Now + WarmupSeconds;
+                if (!sampleAfterWarmup) return;
+                double remaining = warmupUntil - Now;
+                if (remaining > 0) { Status = $"固定实例 {live.Count}/{Concurrency} · 预热剩余 {remaining:F1} 秒"; return; }
+                sampleAfterWarmup = false;
+                Status = "固定实例已就绪，正在采样；请保持相机位置、缩放和 Bloom 设置不变。";
+                Sampler.Start(SampleSeconds);
+            }
+            else if (now >= due)
             {
                 if (live.Count < Concurrency) ThrottledFrames++;
                 due = now + 1d / Rate;
@@ -106,16 +128,19 @@ internal sealed partial class PerformanceLab
             {
                 root = RimUnity.Object.Instantiate(template);
                 root.SetActive(false);
-                double angle = random.NextDouble() * Math.PI * 2;
-                float distance = (float)Math.Sqrt(random.NextDouble()) * Radius;
+                int instance = Spawned;
+                double angle = FixedInstances ? instance * 2.399963229728653 : random.NextDouble() * Math.PI * 2;
+                float distance = FixedInstances ? (Concurrency <= 1 ? 0 : Radius * (float)Math.Sqrt(instance / (double)(Concurrency - 1)))
+                    : (float)Math.Sqrt(random.NextDouble()) * Radius;
                 root.transform.position = new Vector3(Map.Center.x + (float)Math.Cos(angle) * distance, 1,
                     Map.Center.z + (float)Math.Sin(angle) * distance);
                 root.transform.rotation = Quaternion.Euler(RotationX, 0, 0) * root.transform.rotation;
                 root.transform.localScale *= Scale;
                 var systems = root.GetComponentsInChildren<ParticleSystem>(true);
+                if (FixedInstances) ConfigureFixedSystems(systems, instance);
                 foreach (var system in systems) { system.main.useUnscaledTime = true; system.main.playOnAwake = true; }
                 root.SetActive(true);
-                live.Add(new LiveEffect(root, systems, now + Lifetime));
+                live.Add(new LiveEffect(root, systems, FixedInstances ? double.PositiveInfinity : now + Lifetime));
             }
             Spawned++;
         }
@@ -123,6 +148,24 @@ internal sealed partial class PerformanceLab
         {
             if (root != null) RimUnity.Object.DestroyImmediate(root);
             throw new InvalidOperationException(effect.Label + "：" + ex.Message, ex);
+        }
+    }
+
+    //Only diagnostic clones are changed. Event-driven subemitters keep their emission contract;
+    //ordinary emission roots loop instead of continuously rebuilding complete prefabs.
+    private static void ConfigureFixedSystems(ParticleSystem[] systems, int instance)
+    {
+        var targets = new HashSet<ParticleSystem>();
+        foreach (var system in systems)
+            foreach (var entry in system.subEmitters.entries)
+                if (entry.system != null) targets.Add(entry.system);
+        for (int i = 0; i < systems.Length; i++)
+        {
+            var system = systems[i];
+            system.useAutoRandomSeed = false;
+            uint seed = unchecked(9413u + (uint)instance * 0x9e3779b9u + (uint)i * 0x85ebca6bu);
+            system.randomSeed = seed == 0 ? 1u : seed;
+            if (!targets.Contains(system)) system.main.loop = true;
         }
     }
 

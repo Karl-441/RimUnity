@@ -8,23 +8,38 @@ namespace RimUnity.Diagnostics;
 internal sealed partial class LabWindow
 {
     private float concurrency = 20, rate = 5, lifetime = 5, radius = 8, scale = 1, rotationX, seconds = 60;
+    private float warmup = 10;
+    private bool fixedInstances = true;
 
     //并发数、频率与寿命共同决定实际密度，过载限流会在报告中明确记录。
     private void DrawControls(float width, float row, ref float y)
     {
-        Label("滑动相机查看场地。勾选一个特效会循环播放；勾选多个会轮流播放。修改参数后点击应用，已有实例会清空并开始新的采样。", width, ref y);
-        Slider("最大同时存在实例", ref concurrency, 1, 500, 1, width, row, ref y);
-        Slider("每秒播放次数", ref rate, .5f, 200, .5f, width, row, ref y);
-        Slider("实例最长寿命（秒）", ref lifetime, .5f, 60, .5f, width, row, ref y);
-        Slider("分布半径（格）", ref radius, 1, 40, 1, width, row, ref y);
+        Label("勾选要测试的特效后应用参数。多项特效按列表顺序分配给实例；重新开始会清空旧实例。", width, ref y);
+        float modeHeight = Math.Max(row, Text.CalcHeight("固定数量常驻循环（稳定负载）", width - 34) + 8);
+        Widgets.CheckboxLabeled(new URect(0, y, width, modeHeight), "固定数量常驻循环（稳定负载）", ref fixedInstances);
+        y += modeHeight + 8;
+        Slider(fixedInstances ? "固定实例总数" : "最大同时存在实例", ref concurrency, 1, 500, 1, width, row, ref y);
+        if (fixedInstances)
+        {
+            Slider("填满后的预热时间（秒）", ref warmup, 0, 60, 1, width, row, ref y);
+            Label("一次建立固定实例，位置与粒子随机种子可重复。将克隆中的普通发射器设为循环；子发射器保持事件驱动。粒子数量仍随特效周期变化，脚本自行禁用或销毁实例会停止测试。", width, ref y);
+        }
+        else
+        {
+            Slider("每秒播放次数", ref rate, .5f, 200, .5f, width, row, ref y);
+            Slider("实例最长寿命（秒）", ref lifetime, .5f, 60, .5f, width, row, ref y);
+        }
+        Slider("分布半径（格）", ref radius, 0, 40, 1, width, row, ref y);
         Slider("整体尺寸倍率", ref scale, .1f, 5, .1f, width, row, ref y);
         Slider("X 轴旋转（度）", ref rotationX, -180, 180, 15, width, row, ref y);
-        Label("参数应用后开始常规采样；采样结束会自动导出，特效继续播放。频率上限还受每帧创建预算约束。", width, ref y);
+        Label(fixedInstances ? "固定模式在实例填满并预热后自动采样；采样结束后继续播放。采样时保持相机位置和缩放不变，关闭 DPA 详细探针。"
+            : "创建/销毁模式应用后立即采样，包含实例创建成本；频率还受每帧创建预算约束。", width, ref y);
         if (Widgets.ButtonText(new URect(0, y, width, row), "应用参数并播放 / 重新开始"))
         {
             lab.Sampler.Stop("应用新参数", export: true);
             lab.Concurrency = (int)concurrency; lab.Rate = rate; lab.Lifetime = lifetime;
             lab.Radius = radius; lab.Scale = scale; lab.RotationX = rotationX; lab.SampleSeconds = (int)seconds;
+            lab.FixedInstances = fixedInstances; lab.WarmupSeconds = warmup;
             lab.StartPlayback();
         }
         y += row + 8;
@@ -47,11 +62,28 @@ internal sealed partial class LabWindow
     private void DrawReports(float width, float row, ref float y)
     {
         Label(lab.Sampler.Display, width, ref y);
+        const string cpuLabel = "记录 CPU 阶段、分配与合批原因（关闭可做对照）";
+        float cpuHeight = Math.Max(row, Text.CalcHeight(cpuLabel, width - 34) + 8);
+        bool enabled = UnityEngine.GUI.enabled;
+        try
+        {
+            UnityEngine.GUI.enabled = enabled && !lab.Sampler.Sampling;
+            Widgets.CheckboxLabeled(new URect(0, y, width, cpuHeight), cpuLabel, ref lab.MeasureCpuStages);
+        }
+        finally { UnityEngine.GUI.enabled = enabled; }
+        y += cpuHeight + 8;
         Slider("采样时长（秒）", ref seconds, 10, 300, 10, width, row, ref y);
         if (Widgets.ButtonText(new URect(0, y, width, row), lab.Sampler.Sampling ? "停止采样并导出" : "开始常规采样"))
         {
             if (lab.Sampler.Sampling) lab.Sampler.Stop("手动停止", export: true);
             else lab.Sampler.Start((int)seconds);
+        }
+        y += row + 8;
+        if (Widgets.ButtonText(new URect(0, y, width, row), "清空特效并采样空场景"))
+        {
+            lab.Sampler.Stop("切换空场景基线", export: true);
+            lab.StopPlayback();
+            lab.Sampler.Start((int)seconds);
         }
         y += row + 8;
         if (Widgets.ButtonText(new URect(0, y, width, row), "导出性能报告（TXT / JSON / CSV）")) lab.Sampler.Export();
@@ -69,6 +101,6 @@ internal sealed partial class LabWindow
         }
         Label(lab.Status, width, ref y);
         Label("常规采样最多保留 36000 帧，达到上限也会停止并导出。退出场景自动停止采样、移除临时探针并清理实例。测试地图不允许保存。", width, ref y);
-        Label("帧时间包含整个游戏和测试面板的开销；内存与分配是进程级指标。提交项不等于 GPU DrawCall，报告不包含 GPU 时间或显存数值。详细探针报告也保存在 RimUnityReports 目录。", width, ref y);
+        Label("CPU 阶段只在采样期间记录，默认开启；关闭后重新采样可检查探针影响。报告分别记录进程分配、主线程分配和已覆盖阶段分配。阶段时间是 CPU 调用耗时，包含宿主 API 和脚本；不是 GPU 时间。详细探针报告也保存在 RimUnityReports 目录。", width, ref y);
     }
 }

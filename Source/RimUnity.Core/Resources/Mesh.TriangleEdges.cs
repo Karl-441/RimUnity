@@ -37,6 +37,11 @@ public sealed partial class Mesh
         edgeMesh.SetVertices(vertices); edgeMesh.SetUVs(1, ends); edgeMesh.SetUVs(2, thirds);
         for (int submesh = 0; submesh < activeSubmeshes; submesh++) edgeMesh.SetTriangles(indices[submesh], submesh, false);
         edgeMesh.bounds = meshBounds;
+        if (particleBoundsValid)
+        {
+            edgeMesh.particleSubmeshBounds.Clear(); edgeMesh.particleSubmeshBounds.AddRange(particleSubmeshBounds);
+            edgeMesh.particleBoundsValid = true;
+        }
         expandedVersion = edgeVersion;
         return edgeMesh;
     }

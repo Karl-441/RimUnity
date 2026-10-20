@@ -81,8 +81,9 @@ internal sealed class EfxGpuPipeline : IDisposable
         frame.Retain(); retained[ctx.SubmissionFrameIndex] = frame;
         var pair = targets[ctx.SubmissionFrameIndex];
         scene.SetInput(0, hdr ?? source); scene.SetInput(1, bloom ?? source);
-        bool gamma = source.ColorFormat is VkFormat.R8G8B8A8UNorm or VkFormat.B8G8R8A8UNorm;
-        scene.SetPushConstants(new System.Numerics.Vector4(bloom == null ? 0 : intensity, gamma ? 1 : 0, saturation, hdr == null ? 0 : 1));
+        // Native samples are display-space even in float/10-bit/sRGB attachments.
+        // The explicit hdr input, rather than storage format, selects linear data.
+        scene.SetPushConstants(new System.Numerics.Vector4(bloom == null ? 0 : intensity, 1, saturation, hdr == null ? 0 : 1));
         scene.Output = pair[0]; scene.Record(in ctx, null);
         int current = 0;
         var identity = System.Numerics.Matrix4x4.Identity;

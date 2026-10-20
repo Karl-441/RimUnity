@@ -25,13 +25,16 @@ internal sealed unsafe partial class HdrDrawTarget : IDisposable
         EnsurePipelineResources(in ctx, scene);
         return (renderer, pass);
     }
-    internal static bool Gamma(NativeTarget texture) => texture.ColorFormat is VkFormat.B8G8R8A8UNorm or VkFormat.R8G8B8A8UNorm;
 
     //地图先保留已清屏的背景；Bloom 从透明黑开始，不把背景计入亮部。
     internal void Begin(in FrameContext ctx, NativeTarget scene, int frame, bool clear)
     {
         if (colors == null) Initialize(in ctx, scene);
-        current = Gamma(scene) && !clear ? 0 : 1;
+        // Native map/preview shaders produce display-space numeric values. A floating
+        // or sRGB attachment does not change that shader contract: sRGB sampling
+        // cancels the attachment's store encoding. Only an explicitly cleared light
+        // buffer starts in linear space. Never infer content encoding from VkFormat.
+        current = clear ? 1 : 0;
         transfer.Copy(in ctx, frame, scene, colors[ctx.SubmissionFrameIndex][current], 0, clear);
         Result = null;
     }
@@ -65,7 +68,9 @@ internal sealed unsafe partial class HdrDrawTarget : IDisposable
     {
         var copy = sceneCopies[ctx.SubmissionFrameIndex] ??= new NativeTarget(scene.Width, scene.Height,
             scene.ColorFormat, name: name + ".SceneCopy");
-        output.Copy(in ctx, frame, Result, copy, Gamma(scene) ? -1 : 0);
+        // Restore the numeric values expected by native map grabs and CompositePass,
+        // including float/10-bit/sRGB targets. Attachment conversion is separate.
+        output.Copy(in ctx, frame, Result, copy, -1);
         HdrSceneCopy.Record(ctx.CommandBuffer, copy, scene);
     }
 

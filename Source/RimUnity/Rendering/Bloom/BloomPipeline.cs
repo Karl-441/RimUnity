@@ -44,8 +44,8 @@ internal sealed class BloomPipeline : IDisposable
     private static PostEffectPass Make(string name, string shader, int[] bindings)
         => new("RimUnity.Bloom." + name, PathFor(shader), bindings, pushConstantSize: 16);
 
-    //UNorm 场景保存显示颜色；sRGB 附件由采样器解码，浮点场景则约定为线性 HDR。
-    private static bool Gamma(NativeRenderTexture texture) => texture.ColorFormat is VkFormat.B8G8R8A8UNorm or VkFormat.R8G8B8A8UNorm;
+    // Native scene samples follow the host display-space shader contract regardless
+    // of storage format. Only HdrMapHooks.LinearScene is explicitly linear HDR.
 
     //按宿主帧槽位分配，窗口尺寸变化由宿主的安全重建点统一释放。
     private void Ensure(in FrameContext ctx, NativeRenderTexture source)
@@ -126,21 +126,23 @@ internal sealed class BloomPipeline : IDisposable
         if (Diagnostics.RenderDebugReport.Collecting) Diagnostics.RenderDebugReport.Stage("CompositeInputs", "frame=" + settings.FrameNumber + "; slot=" + ctx.SubmissionFrameIndex + "; source=" + source.Width + "x" + source.Height + "/" + source.ColorFormat + "; sourceCreated=" + source.IsCreated + "; output=" + ctx.ColorFormat + "; depth=" + ctx.DepthFormat + "; samples=" + ctx.SampleCount + "; linearHDR=" + (hdr == null ? "none" : hdr.Width + "x" + hdr.Height + "/" + hdr.ColorFormat) + "; bloomPrepared=" + prepared + "; enabled=" + settings.Enabled + "; intensity=" + settings.Intensity + "; saturation=" + scene.Saturation + "; mask=" + settings.LayerMask + "; targets=" + (targets?.Length ?? 0));
         if (Diagnostics.ParticleDebugWindow.Capturing)
             Diagnostics.RendererDebugCapture.CompositeState = "场景合成：source=" + source.ColorFormat + " / output=" + ctx.ColorFormat
-                + " / hdr=" + (hdr == null ? "无" : hdr.ColorFormat.ToString()) + " / sourceGamma=" + Gamma(source)
+                + " / hdr=" + (hdr == null ? "无" : hdr.ColorFormat.ToString()) + " / nativeSceneDisplayEncoded=true"
                 + " / saturation=" + scene.Saturation + " / bloomPrepared=" + prepared + " / intensity=" + settings.Intensity
                 + " / mask=" + settings.LayerMask;
-        if (hdr != null)
+        // WriteScene already restored the native scene. Without an actual light
+        // contribution, preserve the host's final composite and saturation path.
+        if (hdr != null && prepared)
         {
             hdrCombine.SetInput(0, hdr);
-            hdrCombine.SetInput(1, prepared ? targets[ctx.SubmissionFrameIndex][Levels] : hdr);
-            hdrCombine.SetPushConstants(new Vector4(prepared ? settings.Intensity : 0, scene.Saturation, 0, 0));
+            hdrCombine.SetInput(1, targets[ctx.SubmissionFrameIndex][Levels]);
+            hdrCombine.SetPushConstants(new Vector4(settings.Intensity, scene.Saturation, 0, 0));
             hdrCombine.RecordInline(in ctx, ctx.RenderPass, ctx.SampleCount);
             return;
         }
         RecordNative(in ctx, settings);
         if (!prepared) return;
         combine.SetInput(0, source); combine.SetInput(1, targets[ctx.SubmissionFrameIndex][Levels]);
-        combine.SetPushConstants(new Vector4(settings.Intensity, Gamma(source) ? 1 : 0, scene.Saturation, 0));
+        combine.SetPushConstants(new Vector4(settings.Intensity, 1, scene.Saturation, 0));
         combine.RecordInline(in ctx, ctx.RenderPass, ctx.SampleCount);
     }
 

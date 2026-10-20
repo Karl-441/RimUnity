@@ -66,6 +66,7 @@ public sealed partial class ParticleSystemRenderer
         + " / int=" + value.IntValue + " / vector=" + value.VectorValue.ToString();
     private void CaptureDiagnostics(Material mat, Mesh submittedMesh)
     {
+        using var cpu = LabCpuMetrics.Measure(LabCpuStage.DiagnosticCapture);
         if (!ParticleDebugWindow.Capturing) return;
         string key = GetInstanceID() + ":" + mat.GetInstanceID();
         if (!ParticleDebugWindow.BeginSample(key)) return;

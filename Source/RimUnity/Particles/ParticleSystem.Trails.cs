@@ -55,7 +55,9 @@ public sealed partial class ParticleSystem
         state.width = trails.sizeAffectsWidth ? SizeAt(p).x : 1;
         Vector3 position = trails.worldSpace ? WorldPosition(p) : p.position;
         if (state.points.Count != 0 && Vector3.Distance(state.points[^1].position, position) < trails.minVertexDistance) return;
-        float life = trails.lifetime.Evaluate(Age(p), Random(p.randomSeed, 62)) * (trails.sizeAffectsLifetime ? SizeAt(p).x : 1);
+        // Unity stores this curve as a fraction of the particle's starting lifetime.
+        float life = trails.lifetime.Evaluate(Age(p), Random(p.randomSeed, 62)) * p.startLifetime
+            * (trails.sizeAffectsLifetime ? SizeAt(p).x : 1);
         if (life <= 0) return;
         if (state.points.Count > 0) state.distance += Vector3.Distance(state.points[^1].position, position);
         state.points.Add(new TrailPoint { position = position, remaining = life, lifetime = life, distance = state.distance });

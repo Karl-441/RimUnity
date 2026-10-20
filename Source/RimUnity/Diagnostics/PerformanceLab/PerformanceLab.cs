@@ -22,6 +22,7 @@ internal sealed partial class PerformanceLab
     internal Map Map { get; private set; }
     internal List<LabEffect> Effects { get; private set; }
     internal LabSampler Sampler { get; private set; }
+    internal bool MeasureCpuStages = true;
     internal string Status = "选择特效后开始播放；测试期间使用真实时间，殖民地保持暂停。";
     internal bool IsCurrent => !closing && Prefs.DevMode && Verse.Current.Game == game
         && Find.CurrentMap == Map && Map != null && WorldRendererUtility.DrawingMap;

@@ -33,6 +33,7 @@ public sealed partial class Mesh : Object
             while (submeshes.Count < value) submeshes.Add(new());
             for (int i = Math.Min(value, activeSubmeshes); i < Math.Max(value, activeSubmeshes); i++) submeshes[i].Clear();
             activeSubmeshes = value; dirty = true;
+            particleBoundsValid = false;
         }
     }
     public Vector3[] vertices { get => positions.ToArray(); set => Copy(positions, value); }
@@ -50,7 +51,7 @@ public sealed partial class Mesh : Object
     public Vector2[] uv4 { get => ReadUV(3); set => SetUVs(3, value); }
     public Matrix4x4[] bindposes { get => (Matrix4x4[])bindData.Clone(); set => bindData = (Matrix4x4[])value.Clone(); }
     public BoneWeight[] boneWeights { get => (BoneWeight[])skin.Clone(); set => skin = (BoneWeight[])value.Clone(); }
-    public Bounds bounds { get => meshBounds; set { meshBounds = value; dirty = true; } }
+    public Bounds bounds { get => meshBounds; set { meshBounds = value; particleBoundsValid = false; dirty = true; } }
     public int[] triangles
     {
         get { var all = new List<int>(); for (int i = 0; i < activeSubmeshes; i++) all.AddRange(submeshes[i]); return all.ToArray(); }
@@ -72,6 +73,7 @@ public sealed partial class Mesh : Object
     private void Copy<T>(List<T> target, IEnumerable<T> values)
     {
         ArgumentNullException.ThrowIfNull(values);
+        if (ReferenceEquals(target, positions)) particleBoundsValid = false;
         target.Clear(); target.AddRange(values); dirty = true;
     }
     //颜色转换写入复用的字节缓冲区。
@@ -107,6 +109,8 @@ public sealed partial class Mesh : Object
     public void SetTriangles(IList<int> indices, int submesh, bool calculateBounds = true)
     {
         if (submesh < 0) throw new ArgumentOutOfRangeException(nameof(submesh));
+        ArgumentNullException.ThrowIfNull(indices);
+        particleBoundsValid = false;
         if (submesh >= subMeshCount) subMeshCount = submesh + 1;
         Copy(submeshes[submesh], indices);
         if (calculateBounds) RecalculateBounds();
@@ -116,9 +120,11 @@ public sealed partial class Mesh : Object
         positions.Clear(); normalData.Clear(); tangentData.Clear(); colorData.Clear();
         foreach (var channel in texcoords) channel?.Clear();
         subMeshCount = 0; bindData = Array.Empty<Matrix4x4>(); skin = Array.Empty<BoneWeight>(); meshBounds = default; dirty = true;
+        particleSubmeshBounds.Clear(); particleBoundsValid = false;
     }
     public void RecalculateBounds()
     {
+        particleBoundsValid = false;
         if (positions.Count == 0) { meshBounds = default; dirty = true; return; }
         Vector3 min = positions[0], max = min;
         foreach (Vector3 position in positions) { min = Vector3.Min(min, position); max = Vector3.Max(max, position); }

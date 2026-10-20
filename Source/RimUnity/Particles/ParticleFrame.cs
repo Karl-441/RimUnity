@@ -21,6 +21,7 @@ internal static class ParticleFrame
     //各相机独立筛选图层，离屏与地图共享模型、粒子和拖尾绘制逻辑。
     internal static void DrawScene(Camera camera)
     {
+        using var cpu = Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.SceneDraw);
         bool Visible(Component component) => (camera.cullingMask & (1 << component.gameObject.layer)) != 0;
         foreach (var renderer in MeshRenderer.Active)
             if (Visible(renderer)) renderer.Draw(camera);

@@ -19,6 +19,8 @@ public sealed partial class ParticleSystem
         }
         if (!playing && !emitting && count == 0 && trailStates.Count == 0 && subEmissionEvents.Count == 0) { previousPosition = emitterTo; return; }
         EnsureCapacity();
+        // Age existing points before emission/integration records new points at this step.
+        AgeTrails(dt);
         if (main.duration <= 0 || !float.IsFinite(main.duration)) throw new InvalidOperationException("粒子 duration 必须为有限正数。");
         float before = elapsed - delay;
         elapsed += dt;
@@ -79,7 +81,6 @@ public sealed partial class ParticleSystem
         }
         collisionCandidates.Clear();
         AdvanceSubEmissions(dt);
-        AgeTrails(dt);
         if (!emitting && count == 0 && trailStates.Count == 0 && subEmissionEvents.Count == 0 && !completed)
         {
             completed = true; playing = false;
