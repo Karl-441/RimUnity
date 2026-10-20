@@ -22,6 +22,8 @@ public sealed class RimUnityMod : Mod
         Bloom = GetSettings<Rendering.BloomSettings>();
         Rendering.MaterialColorSpace.Install();
         Rendering.ShaderMaterialDefaults.Install();
+        //先确认宿主渲染接口与编译期签名一致，再挂渲染补丁；不一致时只停用后处理，不进入渲染线程。
+        Rendering.BloomHooks.Initialize();
         new Harmony("Chezhou.RimUnity").PatchAll(typeof(RimUnityMod).Assembly);
         LongEventHandler.ExecuteWhenFinished(HostFrame.Install);
         LongEventHandler.ExecuteWhenFinished(Rendering.LoadingWarmup.CompileBeforeMenu);
