@@ -8,7 +8,9 @@ RimUnity 是面向 RimWorld 1.7 的 Unity 资源导出与运行框架。在 Unit
 
 ## 快速开始
 
-**当前版本：0.1.14。独立模组、内置运行时和 Unity 导出工具见 [Releases](https://github.com/chezhou9413/RimUnity/releases/tag/v0.1.14)。**
+**当前版本：0.1.16。独立模组、内置运行时和 Unity 导出工具见 [Releases](https://github.com/chezhou9413/RimUnity/releases)。**
+
+0.1.16 适配 RimWorld 1.7.4984 rev1242 的 Waylith 后处理接口，修复引擎更新后进入地图时的崩溃。请先更新游戏；使用内置运行时的内容模组也需更换内置包。
 
 | 接入方式 | 使用方法 |
 | --- | --- |

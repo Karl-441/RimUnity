@@ -13,7 +13,7 @@ internal sealed class HdrTransferPass : PostEffectPass
     private int frame = -1, count;
     //一个转换通道重复使用描述符池，按在途帧隔离。
     internal HdrTransferPass(string name) : base(name, Path.Combine(RimUnityMod.ShaderDirectory, "HdrTransfer.frag.glsl"),
-        new[] { 0 }, pushConstantSize: 16, maxPassesPerFrame: Capacity) { }
+        new[] { 0 }, pushConstantSize: 16, maxPassesPerFrame: Capacity, writeDepth: false) { }
 
     //编码方向为负，解码为正，零只拷贝；清屏不采样源颜色。
     internal void Copy(in FrameContext ctx, int frameNumber, Waylith.Rendering.RenderTexture source,

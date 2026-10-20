@@ -8,7 +8,9 @@ RimUnity is a Unity asset exporter and runtime framework for RimWorld 1.7. Creat
 
 ## Quick start
 
-**Current version: 0.1.14. Download the standalone mod, embedded runtime and Unity exporter from [Releases](https://github.com/chezhou9413/RimUnity/releases/tag/v0.1.14).**
+**Current version: 0.1.16. Download the standalone mod, embedded runtime and Unity exporter from [Releases](https://github.com/chezhou9413/RimUnity/releases).**
+
+Version 0.1.16 targets the Waylith post-processing API in RimWorld 1.7.4984 rev1242 and fixes the crash when entering a map after the engine update. Update the game first; content mods using the embedded runtime also need to replace their embedded package.
 
 | Integration | Usage |
 | --- | --- |

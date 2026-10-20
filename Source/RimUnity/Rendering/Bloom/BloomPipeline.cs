@@ -34,15 +34,16 @@ internal sealed class BloomPipeline : IDisposable
         for (int i = 0; i < Levels; i++) down[i] = Make("Down" + i, i == 0 ? "BloomPrefilter" : "BloomDown", new[] { 0 });
         for (int i = 0; i < Levels - 1; i++) up[i] = Make("Up" + i, "BloomUp", new[] { 0, 1 });
         var blend = new BlendState(true, BlendFactor.One, BlendFactor.One, BlendOp.Add, BlendFactor.Zero, BlendFactor.One, BlendOp.Add);
-        combine = new PostEffectPass("RimUnity.Bloom.Composite", PathFor("BloomComposite"), new[] { 0, 1 }, blend, 16);
+        combine = new PostEffectPass("RimUnity.Bloom.Composite", PathFor("BloomComposite"), new[] { 0, 1 }, blend, 16, writeDepth: false);
         hdrCombine = Make("HdrComposite", "HdrComposite", new[] { 0, 1 });
         Passes = new IRenderPass[] { new Stage(this, true), new Stage(this, false) };
     }
 
     //原生后处理通道自行编译独立 GLSL，不使用 Unity Blit 的兼容占位实现。
     private static string PathFor(string name) => Path.Combine(RimUnityMod.ShaderDirectory, name + ".frag.glsl");
+    //颜色后处理不写深度；显式参数要求编译引用包含宿主的八参数构造函数。
     private static PostEffectPass Make(string name, string shader, int[] bindings)
-        => new("RimUnity.Bloom." + name, PathFor(shader), bindings, pushConstantSize: 16);
+        => new("RimUnity.Bloom." + name, PathFor(shader), bindings, pushConstantSize: 16, writeDepth: false);
 
     // Native scene samples follow the host display-space shader contract regardless
     // of storage format. Only HdrMapHooks.LinearScene is explicitly linear HDR.

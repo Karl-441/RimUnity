@@ -223,15 +223,16 @@ internal sealed class EfxGpuPipeline : IDisposable
         if (targets != null) foreach (var pair in targets) if (pair != null) foreach (var target in pair) target?.Dispose();
         targets = null;
         scene.Output = null;
-        //The RenderTexture overload dereferences texture.Color/Sampler and cannot clear a
-        //binding. Clear the borrowed allocation/sampler directly after GPU slot retirement.
-        scene.SetInput(0, null, default); scene.SetInput(1, null, default); output.SetInput(0, null, default);
+        //纹理和分配对象重载都会解引用；帧槽位退役后用空图像视图清除借用绑定。
+        scene.SetInput(0, default(VkImageView), default);
+        scene.SetInput(1, default(VkImageView), default);
+        output.SetInput(0, default(VkImageView), default);
     }
     public void Dispose() { ReleaseTargets(); scene.Dispose(); output.Dispose(); }
 
-    //Use the exact PostEffectPass build path without recording draws or allocating full-screen images.
+    //沿用原生后处理构建路径进行预热，不录制绘制命令，也不分配全屏图像。
     private sealed class WarmablePass(string name, string fragment, int[] bindings, int pushConstantSize)
-        : PostEffectPass(name, fragment, bindings, pushConstantSize: pushConstantSize)
+        : PostEffectPass(name, fragment, bindings, pushConstantSize: pushConstantSize, writeDepth: false)
     {
         private delegate void InlineInitializer(PostEffectPass owner, in FrameContext ctx, VkRenderPass pass, VkSampleCountFlags samples);
         private static readonly InlineInitializer InitializeInline = AccessTools.Method(typeof(PostEffectPass), "EnsureInline").CreateDelegate<InlineInitializer>();
