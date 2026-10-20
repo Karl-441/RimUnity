@@ -1,0 +1,121 @@
+// Deterministic CPU fixture; no claim about driver/GPU behavior or shader validation.
+namespace RimUnity
+{
+    internal struct Vector3 { }
+    internal struct Vector4 { }
+    internal struct Color32 { }
+    internal struct Matrix4x4 { internal static Matrix4x4 identity => default; }
+    internal enum IndexFormat { UInt32 }
+    internal static class Time { internal static int frameCount; }
+    internal class Material
+    {
+        internal int passCount = 1;
+        internal Native engineMaterial = new();
+        internal Rendering.ParticleBatchShaders.Eligibility Eligibility;
+        internal class Native { internal int Version; }
+    }
+    internal class MaterialPropertyBlock { internal int PropertyCount; internal bool HasStorageBindings; }
+    internal class Mesh
+    {
+        internal string name;
+        internal IndexFormat indexFormat;
+        internal int vertexCount;
+        internal readonly List<int> Indices = new();
+        internal static bool FailAppend;
+        internal void MarkDynamic() { }
+        internal void Clear() { vertexCount = 0; Indices.Clear(); }
+        internal void AppendParticleGeometry(List<Vector3> vertices, List<Vector3> normals, List<Vector4> tangents,
+            List<Color32> colors, List<Vector4> uv0, List<Vector4> uv1, List<Vector4> uv2, List<int> indices)
+        {
+            if (FailAppend) throw new InvalidOperationException("fixture append failure");
+            foreach (int index in indices) Indices.Add(index + vertexCount);
+            vertexCount += vertices.Count;
+        }
+    }
+    internal static class Graphics
+    {
+        internal static readonly List<(Material Material, int Layer, int[] Indices)> Draws = new();
+        internal static void DrawMesh(Mesh mesh, Matrix4x4 matrix, Material material, int layer)
+            => Draws.Add((material, layer, mesh.Indices.ToArray()));
+    }
+    internal static class Object
+    {
+        internal static void Destroy(object item) { }
+        internal static void DestroyImmediate(object item) { }
+    }
+}
+namespace RimUnity.Rendering
+{
+    internal static class ParticleBatchShaders
+    {
+        internal enum Eligibility { Supported, MultiplePasses, UnknownShader, UnsafeShader }
+        internal static Eligibility Check(Material material) => material.passCount == 1 ? material.Eligibility : Eligibility.MultiplePasses;
+    }
+}
+namespace RimUnity.Diagnostics
+{
+    internal static class ParticleDebugWindow { internal static bool Capturing; }
+    internal static class ParticleSpikeCapture
+    {
+        internal static bool LabCaptureActive => false;
+        internal static System.IDisposable Measure(string stage) => null;
+    }
+}
+
+namespace Waylith
+{
+    internal sealed class EngineApplication
+    {
+        internal static readonly EngineApplication Instance = new();
+        internal event Action<EngineApplication> FrameEnqueued;
+        internal event Action<EngineApplication> PrePollEvents;
+        internal int Subscribers => FrameEnqueued?.GetInvocationList().Length ?? 0;
+        internal int PrePollSubscribers => PrePollEvents?.GetInvocationList().Length ?? 0;
+        internal void Poll() => PrePollEvents?.Invoke(this);
+        internal void Emit() => FrameEnqueued?.Invoke(this);
+    }
+}
+namespace Verse
+{
+    internal class Game { }
+    internal static class LongEventHandler { internal static bool AnyEventNowOrWaiting; }
+    internal static class Log { internal static void Error(string text) => throw new Exception(text); internal static void Message(string text) { } }
+    internal static class GenFilePaths { internal static string ConfigFolderPath = Path.Combine(Path.GetTempPath(), "RimUnity", "LabCpuMetricsTests-" + Guid.NewGuid().ToString("N")); }
+    internal static class Messages { internal static void Message(string text, object kind, bool historical) { } }
+}
+namespace RimWorld { internal static class MessageTypeDefOf { internal static readonly object TaskCompletion = new(); } }
+namespace UnityEngine { internal static class Screen { internal static int width => 1600; internal static int height => 900; } }
+namespace RimUnity
+{
+    internal static class RuntimeInfo
+    {
+        internal static string Version => "test";
+        internal static string Provider => "fixture";
+        internal static bool IsStandalone => false;
+        internal static string PayloadHash => "fixture-payload";
+    }
+    internal static class RimUnityMod
+    {
+        internal static readonly Settings Bloom = new();
+        internal sealed class Settings { internal Settings Snapshot() => this; internal bool Enabled => true; }
+    }
+}
+namespace RimUnity.Diagnostics
+{
+    internal sealed class PerformanceLab
+    {
+        internal bool IsCurrent = true, StableReady = true, FixedInstances = true, Playing = true, MeasureCpuStages = true;
+        internal string Status;
+        internal int Concurrency = 20, WarmupSeconds = 10, LiveCount = 20, Spawned = 20, ThrottledFrames;
+        internal float Rate = 5, Lifetime = 5, Radius = 8, Scale = 1, RotationX;
+        internal readonly List<Effect> Effects = new();
+        internal (int Systems, int Particles) Counts() => LiveCount == 0 ? (0, 0) : (80, 800);
+        internal sealed class Effect
+        {
+            internal bool Selected;
+            internal Mod Mod;
+            internal string Path, Warnings;
+        }
+        internal sealed class Mod { internal string PackageIdPlayerFacing; }
+    }
+}

@@ -17,22 +17,27 @@ public sealed partial class ParticleSystem
     private static void SimulateFrame()
     {
         if (simulatedFrame == Time.frameCount) return;
+        using var cpu = Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.ParticleSimulation);
         simulatedFrame = Time.frameCount;
         frameSystems.Clear(); frameSystems.AddRange(Active);
         orderedSystems.Clear(); visitState.Clear();
         try
         {
-            foreach (ParticleSystem system in frameSystems) Visit(system, Active, orderedSystems, visitState);
-            orderedSystems.Reverse();
-            //Start 只登记预热，统一完成整组预热后再读取本帧时间和位置。
-            foreach (ParticleSystem system in orderedSystems) system.Start();
-            PrewarmSystems(orderedSystems);
-            foreach (ParticleSystem system in orderedSystems)
+            using (Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.SimulationSchedule))
             {
-                float dt = system.clock.Step(system.main.useUnscaledTime);
-                system.PrepareSimulationTime(system.paused ? 0 : dt * system.main.simulationSpeed);
+                foreach (ParticleSystem system in frameSystems) Visit(system, Active, orderedSystems, visitState);
+                orderedSystems.Reverse();
+                //Start 只登记预热，统一完成整组预热后再读取本帧时间和位置。
+                foreach (ParticleSystem system in orderedSystems) system.Start();
+                PrewarmSystems(orderedSystems);
+                foreach (ParticleSystem system in orderedSystems)
+                {
+                    float dt = system.clock.Step(system.main.useUnscaledTime);
+                    system.PrepareSimulationTime(system.paused ? 0 : dt * system.main.simulationSpeed);
+                }
             }
-            AdvanceSystems(orderedSystems, true, true);
+            using (Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.SimulationAdvance))
+                AdvanceSystems(orderedSystems, true, true);
         }
         finally
         {
@@ -68,7 +73,8 @@ public sealed partial class ParticleSystem
                         Vector3.Lerp(system.frameFrom, system.frameTo, (step + 1f) / steps));
                 }
             }
-            foreach (var system in systems) system.DispatchPhysicsEvents();
+            using (Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.SimulationEvents))
+                foreach (var system in systems) system.DispatchPhysicsEvents();
         }
         finally
         {

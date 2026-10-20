@@ -161,6 +161,8 @@ internal sealed class HdrDrawFrame : IDisposable
 
     internal HdrDrawFrame(MeshDrawFrame source, int mask = -1, bool readOnlyDepth = false)
     {
+        using var cpu = Diagnostics.LabCpuMetrics.Measure(readOnlyDepth
+            ? Diagnostics.LabCpuStage.BloomSnapshot : Diagnostics.LabCpuStage.HdrSnapshot);
         ArgumentNullException.ThrowIfNull(source);
         workspace = RentWorkspace(readOnlyDepth);
         try

@@ -163,6 +163,20 @@ Console.WriteLine("PASS: authored grab sampler resolves after creation, clone, c
 // Particle trails use a lifetime multiplier, not absolute seconds (pillar-collapse shards).
 var particleSystemType=assembly.GetType("RimUnity.ParticleSystem",true);
 object particleSystem=Activator.CreateInstance(particleSystemType);
+// The actual empty-event dispatch must not allocate once JIT/static initialization is warm.
+var dispatch = particleSystemType.GetMethod("DispatchPhysicsEvents", flags).CreateDelegate<Action>(particleSystem);
+for (int i = 0; i < 10000; i++) dispatch();
+long dispatchBytes = GC.GetAllocatedBytesForCurrentThread();
+for (int i = 0; i < 10000; i++) dispatch();
+dispatchBytes = GC.GetAllocatedBytesForCurrentThread() - dispatchBytes;
+if (dispatchBytes != 0) throw new Exception($"Empty particle event dispatch allocated {dispatchBytes} bytes.");
+var collisionRecords = (IList)particleSystemType.GetField("collisionEvents", flags).GetValue(particleSystem);
+var collisionRecordType = collisionRecords.GetType().GetGenericArguments()[0];
+collisionRecords.Add(Activator.CreateInstance(collisionRecordType));
+dispatch();
+if (collisionRecords.Count != 1) throw new Exception("Dispatch changed collision records needed by GetCollisionEvents.");
+collisionRecords.Clear(); dispatch();
+Console.WriteLine("PASS: actual empty particle collision/trigger dispatch allocates 0 B across 10000 calls; nonempty collision records preserved.");
 object trailModule=particleSystemType.GetField("trails").GetValue(particleSystem);
 void TrailField(string name,object value)=>trailModule.GetType().GetField(name).SetValue(trailModule,value);
 TrailField("enabled",true); TrailField("ratio",1f); TrailField("inheritParticleColor",false);

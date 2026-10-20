@@ -9,6 +9,7 @@ namespace RimUnity.Rendering;
 //只对已检查过完整程序的 Shader 合并世界空间几何，未知宿主程序保持原提交方式。
 internal static class ParticleBatchShaders
 {
+    internal enum Eligibility { Supported, MultiplePasses, UnknownShader, UnsafeShader }
     private sealed record Support(bool Allowed);
     private static readonly ConditionalWeakTable<NativeShader, Support> shaders = new();
     private static readonly string[] drawBuiltins =
@@ -36,6 +37,11 @@ internal static class ParticleBatchShaders
     }
 
     //多 Pass 保留原来的逐对象 Pass 顺序；实例参数和 UI 遮罩在提交处另外隔离。
-    internal static bool Allows(Material material) => material.passCount == 1
-        && shaders.TryGetValue(material.shader.EngineShader, out var support) && support.Allowed;
+    internal static Eligibility Check(Material material)
+    {
+        if (material.passCount != 1) return Eligibility.MultiplePasses;
+        if (!shaders.TryGetValue(material.shader.EngineShader, out var support)) return Eligibility.UnknownShader;
+        return support.Allowed ? Eligibility.Supported : Eligibility.UnsafeShader;
+    }
+    internal static bool Allows(Material material) => Check(material) == Eligibility.Supported;
 }

@@ -17,6 +17,9 @@ and canonical scene-grab texture resolution through material creation, clones,
 property copies, Shader changes and additional-pass synchronization.
 Particle trail checks also cover lifetime as a fraction of particle starting
 lifetime, separate aging of existing/new samples, and expired-point removal.
+The actual runtime's empty particle collision/trigger dispatch is warmed and called
+10000 times through a cached delegate, requiring zero managed allocation. A nonempty
+collision record list is also dispatched and must remain available to the query API.
 
 The harness checks CPU geometry and resource bindings. GPU appearance still
 requires an in-game check.

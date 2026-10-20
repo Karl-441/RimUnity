@@ -39,6 +39,7 @@ internal static class HostFrame
     {
         //读档与地图生成会在后台重建世界数据，完成前不推进脚本或提交地图绘制。
         if (LongEventHandler.AnyEventNowOrWaiting) return;
+        using var labWindow = Diagnostics.LabCpuMetrics.BridgeWindow();
         //最小化窗口时没有绘制快照，在下一次更新前结束未提交的帧。
         FinishFrame(application);
         if (!ReferenceEquals(lastGame, Current.Game))
@@ -51,6 +52,7 @@ internal static class HostFrame
             lastGame = Current.Game;
         }
         BeforeSimulation?.Invoke();
+        using var cpu = Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.BridgeUpdate);
         HostCamera.Synchronize();
         NativeRuntime.BeginFrame(Waylith.Time.DeltaTime);
         framePending = true;

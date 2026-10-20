@@ -62,11 +62,28 @@ internal sealed partial class LabWindow
     private void DrawReports(float width, float row, ref float y)
     {
         Label(lab.Sampler.Display, width, ref y);
+        const string cpuLabel = "记录 CPU 阶段、分配与合批原因（关闭可做对照）";
+        float cpuHeight = Math.Max(row, Text.CalcHeight(cpuLabel, width - 34) + 8);
+        bool enabled = UnityEngine.GUI.enabled;
+        try
+        {
+            UnityEngine.GUI.enabled = enabled && !lab.Sampler.Sampling;
+            Widgets.CheckboxLabeled(new URect(0, y, width, cpuHeight), cpuLabel, ref lab.MeasureCpuStages);
+        }
+        finally { UnityEngine.GUI.enabled = enabled; }
+        y += cpuHeight + 8;
         Slider("采样时长（秒）", ref seconds, 10, 300, 10, width, row, ref y);
         if (Widgets.ButtonText(new URect(0, y, width, row), lab.Sampler.Sampling ? "停止采样并导出" : "开始常规采样"))
         {
             if (lab.Sampler.Sampling) lab.Sampler.Stop("手动停止", export: true);
             else lab.Sampler.Start((int)seconds);
+        }
+        y += row + 8;
+        if (Widgets.ButtonText(new URect(0, y, width, row), "清空特效并采样空场景"))
+        {
+            lab.Sampler.Stop("切换空场景基线", export: true);
+            lab.StopPlayback();
+            lab.Sampler.Start((int)seconds);
         }
         y += row + 8;
         if (Widgets.ButtonText(new URect(0, y, width, row), "导出性能报告（TXT / JSON / CSV）")) lab.Sampler.Export();
@@ -84,6 +101,6 @@ internal sealed partial class LabWindow
         }
         Label(lab.Status, width, ref y);
         Label("常规采样最多保留 36000 帧，达到上限也会停止并导出。退出场景自动停止采样、移除临时探针并清理实例。测试地图不允许保存。", width, ref y);
-        Label("帧时间包含整个游戏和测试面板的开销；内存与分配是进程级指标。提交项不等于 GPU DrawCall，报告不包含 GPU 时间或显存数值。详细探针报告也保存在 RimUnityReports 目录。", width, ref y);
+        Label("CPU 阶段只在采样期间记录，默认开启；关闭后重新采样可检查探针影响。报告分别记录进程分配、主线程分配和已覆盖阶段分配。阶段时间是 CPU 调用耗时，包含宿主 API 和脚本；不是 GPU 时间。详细探针报告也保存在 RimUnityReports 目录。", width, ref y);
     }
 }

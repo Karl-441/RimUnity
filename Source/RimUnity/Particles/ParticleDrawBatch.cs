@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using RimUnity.Rendering;
+using RimUnity.Diagnostics;
 
 namespace RimUnity;
 
@@ -45,19 +46,42 @@ internal static class ParticleDrawBatch
         List<Vector3> vertices, List<Vector3> normals, List<Vector4> tangents, List<Color32> colors,
         List<Vector4> uv0, List<Vector4> uv1, List<Vector4> uv2, List<int> indices)
     {
-        if (!active) return false;
-        if (Diagnostics.ParticleDebugWindow.Capturing || properties is { PropertyCount: > 0 } || properties is { HasStorageBindings: true }
-            || vertices.Count > VertexLimit || indices.Count > IndexLimit || !ParticleBatchShaders.Allows(source))
-        { Flush(); if (Sampling) IndependentDraws += source.passCount; return false; }
-        if (pending != null && (source != material || drawLayer != layer || source.engineMaterial.Version != materialVersion
-            || pending.Mesh.vertexCount + vertices.Count > VertexLimit || indexCount + indices.Count > IndexLimit)) Flush();
+        using var cpu = LabCpuMetrics.Measure(LabCpuStage.BatchAttempt);
+        if (!active) { LabCpuMetrics.Batch(LabBatchReason.Inactive); return false; }
+        LabBatchReason? reject = null;
+        if (Diagnostics.ParticleDebugWindow.Capturing) reject = LabBatchReason.DebugCapture;
+        else if (properties is { PropertyCount: > 0 }) reject = LabBatchReason.PropertyBlock;
+        else if (properties is { HasStorageBindings: true }) reject = LabBatchReason.StorageBindings;
+        else if (vertices.Count > VertexLimit) reject = LabBatchReason.InputVertexLimit;
+        else if (indices.Count > IndexLimit) reject = LabBatchReason.InputIndexLimit;
+        else reject = ParticleBatchShaders.Check(source) switch
+        {
+            ParticleBatchShaders.Eligibility.MultiplePasses => LabBatchReason.MultiplePasses,
+            ParticleBatchShaders.Eligibility.UnknownShader => LabBatchReason.UnknownShader,
+            ParticleBatchShaders.Eligibility.UnsafeShader => LabBatchReason.UnsafeShader,
+            _ => null
+        };
+        if (reject.HasValue)
+        { LabCpuMetrics.Batch(reject.Value); Flush(); if (Sampling) IndependentDraws += source.passCount; return false; }
+        if (pending != null)
+        {
+            LabBatchReason? boundary = source != material ? LabBatchReason.MaterialChanged
+                : drawLayer != layer ? LabBatchReason.LayerChanged
+                : source.engineMaterial.Version != materialVersion ? LabBatchReason.MaterialVersionChanged
+                : pending.Mesh.vertexCount + vertices.Count > VertexLimit ? LabBatchReason.BatchVertexLimit
+                : indexCount + indices.Count > IndexLimit ? LabBatchReason.BatchIndexLimit : null;
+            if (boundary.HasValue) { LabCpuMetrics.Batch(boundary.Value); Flush(); }
+        }
         if (pending == null)
         {
             if (cursor == slots.Count) slots.Add(new Slot());
             pending = slots[cursor++]; pending.Frame = frame; pending.Mesh.Clear();
             material = source; layer = drawLayer; materialVersion = source.engineMaterial.Version; indexCount = 0;
         }
-        pending.Mesh.AppendParticleGeometry(vertices, normals, tangents, colors, uv0, uv1, uv2, indices);
+        using (LabCpuMetrics.Measure(LabCpuStage.BatchGeometry))
+            pending.Mesh.AppendParticleGeometry(vertices, normals, tangents, colors, uv0, uv1, uv2, indices);
+        LabCpuMetrics.Work(LabCpuStage.BatchGeometry, vertices.Count, indices.Count);
+        LabCpuMetrics.Batch(LabBatchReason.Accepted);
         indexCount += indices.Count;
         if (Sampling) Inputs++;
         return true;
@@ -67,8 +91,10 @@ internal static class ParticleDrawBatch
     internal static void Flush()
     {
         if (pending == null) return;
+        using var cpu = LabCpuMetrics.Measure(LabCpuStage.BatchFlush);
         using var spike = Diagnostics.ParticleSpikeCapture.Measure("Particle.BatchFlush");
-        Graphics.DrawMesh(pending.Mesh, Matrix4x4.identity, material, layer);
+        using (LabCpuMetrics.Measure(LabCpuStage.DrawMesh))
+            Graphics.DrawMesh(pending.Mesh, Matrix4x4.identity, material, layer);
         if (Sampling) Outputs++;
         pending = null; material = null; indexCount = 0;
     }

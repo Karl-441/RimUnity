@@ -14,9 +14,14 @@ internal sealed partial class LabSampler : IDisposable
     private readonly PerformanceLab lab;
     private EngineApplication application;
     private Process process;
+    private LabCpuMetrics cpu;
+    private long mainAllocated;
     private Sample[] samples;
     private int count, previous0, previous1, previous2, submitted;
     private long origin, previous, allocated, memoryTime, workingSet, privateBytes, managedBytes;
+    private long startWorkingSet, startPrivateBytes;
+    private bool endMemoryCaptured;
+    private string endMemoryError;
     private int duration;
     private JsonElement configuration;
     private string startedUtc, stopReason, lastReport;
@@ -32,7 +37,8 @@ internal sealed partial class LabSampler : IDisposable
     private readonly record struct Sample(int Frame, double ElapsedMs, double IntervalMs, long AllocatedBytes,
         int Gen0, int Gen1, int Gen2, int Instances, int Systems, int Particles, int SubmittedItems,
         long ManagedBytes, long WorkingSetBytes, long PrivateBytes, int Spawned, int ThrottledFrames, bool DetailedProbes,
-        int ParticleDrawsBeforeBatch, int ParticleDrawsAfterBatch);
+        int ParticleDrawsBeforeBatch, int ParticleDrawsAfterBatch,
+        long MainThreadAllocatedBytes, double ObserverCpuMs, long ObserverAllocatedBytes);
 
     //实例化阶段单独按资源汇总，预热和逐帧模拟耗时由详细探针报告定位。
     internal sealed class SpawnCost
@@ -50,9 +56,11 @@ internal sealed partial class LabSampler : IDisposable
     internal void Start(int seconds)
     {
         if (!lab.IsCurrent) return;
-        if (!lab.StableReady) { lab.Status = "固定实例仍在建立或预热，完成后会自动开始采样。"; return; }
+        bool emptyBaseline = !lab.Playing && lab.LiveCount == 0;
+        if (!lab.StableReady && !emptyBaseline) { lab.Status = "固定实例仍在建立或预热，完成后会自动开始采样。"; return; }
         Stop("重新开始采样", export: true);
         samples = new Sample[Capacity]; count = 0; submitted = 0; lastReport = null;
+        cpu = lab.MeasureCpuStages ? new LabCpuMetrics(Capacity) : null;
         spawnCosts.Clear();
         duration = seconds; startedUtc = DateTime.UtcNow.ToString("O"); stopReason = "";
         configuration = JsonSerializer.SerializeToElement(new
@@ -61,7 +69,7 @@ internal sealed partial class LabSampler : IDisposable
             PlaybackMode = lab.FixedInstances ? "FixedInstances" : "CreateDestroy", lab.WarmupSeconds,
             ParticleSeedsFixed = lab.FixedInstances,
             RequestedSeconds = seconds, MaxNewInstancesPerFrame = 16, SpawnBudgetMs = 8, RandomSeed = 9413,
-            PlaybackEnabled = lab.Playing,
+            PlaybackEnabled = lab.Playing, EmptyBaseline = emptyBaseline,
             ParticleBatchVertexLimit = ParticleDrawBatch.VertexLimit, ParticleBatchIndexLimit = ParticleDrawBatch.IndexLimit,
             Effects = lab.Effects.FindAll(e => e.Selected).ConvertAll(e => e.Mod.PackageIdPlayerFacing + "/" + e.Path),
             AssetWarnings = lab.Effects.FindAll(e => e.Selected && e.Warnings.Length > 0)
@@ -69,21 +77,32 @@ internal sealed partial class LabSampler : IDisposable
             RimUnityVersion = typeof(PerformanceLab).Assembly.ManifestModule.ModuleVersionId.ToString(),
             GameVersion = typeof(Game).Assembly.ManifestModule.ModuleVersionId.ToString(),
             ProcessorCount = Environment.ProcessorCount, Resolution = UnityEngine.Screen.width + "x" + UnityEngine.Screen.height,
-            BloomEnabled = RimUnityMod.Bloom.Snapshot().Enabled
+            BloomEnabled = RimUnityMod.Bloom.Snapshot().Enabled,
+            CpuStagesEnabled = lab.MeasureCpuStages, CpuStageSchema = 2,
+            ProcessMemorySampling = "BeforeAndAfterOnly; frame process memory columns retain the before-sample snapshot",
+            RuntimeVersion = RuntimeInfo.Version, RuntimeProvider = RuntimeInfo.Provider,
+            RuntimeIsStandalone = RuntimeInfo.IsStandalone, RuntimePayloadHash = RuntimeInfo.PayloadHash
         });
         spawnStart = lab.Spawned; throttledStart = lab.ThrottledFrames;
         process = Process.GetCurrentProcess(); ReadMemory();
+        startWorkingSet = workingSet; startPrivateBytes = privateBytes;
+        endMemoryCaptured = false; endMemoryError = null;
+        cpu?.Start();
         allocated = GC.GetTotalAllocatedBytes(false);
+        mainAllocated = GC.GetAllocatedBytesForCurrentThread();
         previous0 = GC.CollectionCount(0); previous1 = GC.CollectionCount(1); previous2 = GC.CollectionCount(2);
         origin = previous = memoryTime = Stopwatch.GetTimestamp();
         application = EngineApplication.Instance;
         Sampling = true; Display = "正在采样……";
         ParticleDrawBatch.Sampling = true;
         application.FrameEnqueued += Frame;
+        application.PrePollEvents += PrePoll;
     }
 
     //提交项是地图快照数量，不能当作驱动实际 DrawCall 或 GPU 耗时。
     internal void SetSubmittedItems(int value) => submitted = value;
+
+    private void PrePoll(EngineApplication app) => cpu?.BeginMainFrame();
 
     //只在采样开启时累计，字典规模最多等于本次选择的资源数。
     internal void RecordSpawn(string path, double milliseconds, long bytes)
@@ -93,7 +112,7 @@ internal sealed partial class LabSampler : IDisposable
         cost.Count++; cost.TotalMs += milliseconds; cost.MaxMs = Math.Max(cost.MaxMs, milliseconds); cost.AllocatedBytes += bytes;
     }
 
-    //每秒更新一次进程内存和界面摘要，逐帧数据直接写入预分配数组。
+    //进程查询只在采样边界进行；每秒只读取 GC 统计和更新界面摘要。
     private void Frame(EngineApplication app)
     {
         if (!Sampling) return;
@@ -102,24 +121,32 @@ internal sealed partial class LabSampler : IDisposable
         try
         {
             long now = Stopwatch.GetTimestamp();
+            long mainTotal = GC.GetAllocatedBytesForCurrentThread();
             long total = GC.GetTotalAllocatedBytes(false);
+            cpu?.CompleteFrame(now, mainTotal);
             int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
             bool refresh = now - memoryTime >= Stopwatch.Frequency;
-            if (refresh) { ReadMemory(); memoryTime = now; }
+            if (refresh) { managedBytes = GC.GetTotalMemory(false); memoryTime = now; }
             var particles = lab.Counts();
             samples[count] = new Sample(count + 1, Ms(now - origin), Ms(now - previous), Math.Max(0, total - allocated),
                 g0 - previous0, g1 - previous1, g2 - previous2, lab.LiveCount, particles.Systems, particles.Particles,
                 submitted, managedBytes, workingSet, privateBytes, lab.Spawned - spawnStart,
                 lab.ThrottledFrames - throttledStart, ParticleSpikeCapture.LabCaptureActive,
-                ParticleDrawBatch.Before, ParticleDrawBatch.After);
+                ParticleDrawBatch.Before, ParticleDrawBatch.After,
+                Math.Max(0, mainTotal - mainAllocated), 0, 0);
             count++;
-            previous = now; allocated = total; previous0 = g0; previous1 = g1; previous2 = g2;
+            previous = now; allocated = total; mainAllocated = mainTotal; previous0 = g0; previous1 = g1; previous2 = g2;
             if (refresh)
                 Display = $"采样 {Seconds:F1}/{duration} 秒 · {count} 帧\n" +
                     $"当前 {1000 / Math.Max(.001, samples[count - 1].IntervalMs):F1} FPS · {samples[count - 1].IntervalMs:F2} ms\n" +
                     $"实例 {lab.LiveCount} · 系统 {particles.Systems} · 粒子 {particles.Particles} · 提交项 {submitted}\n" +
                     $"粒子绘制提交：合批前 {ParticleDrawBatch.Before} → 合批后 {ParticleDrawBatch.After}\n" +
-                    $"托管堆 {managedBytes / 1048576d:F1} MiB · 工作集 {workingSet / 1048576d:F1} MiB";
+                    $"托管堆 {managedBytes / 1048576d:F1} MiB · 采样前工作集 {startWorkingSet / 1048576d:F1} MiB";
+            samples[count - 1] = samples[count - 1] with
+            {
+                ObserverCpuMs = Ms(Stopwatch.GetTimestamp() - now),
+                ObserverAllocatedBytes = Math.Max(0, GC.GetAllocatedBytesForCurrentThread() - mainTotal)
+            };
             if (Seconds >= duration) Stop("采样时间结束", export: true);
             else if (count == Capacity) Stop("达到 36000 帧容量上限", export: true);
         }
@@ -135,9 +162,14 @@ internal sealed partial class LabSampler : IDisposable
     {
         if (!Sampling) return;
         Sampling = false;
+        cpu?.Stop();
         ParticleDrawBatch.Sampling = false;
-        application.FrameEnqueued -= Frame; application = null;
-        process.Dispose(); process = null;
+        application.FrameEnqueued -= Frame;
+        application.PrePollEvents -= PrePoll; application = null;
+        // Potentially slow OS queries run only after timing and event collection stop.
+        try { ReadMemory(); endMemoryCaptured = true; }
+        catch (Exception ex) { endMemoryError = ex.GetType().Name + ": " + ex.Message; }
+        finally { process.Dispose(); process = null; }
         stopReason = reason;
         Display = Summary();
         if (export) Export();

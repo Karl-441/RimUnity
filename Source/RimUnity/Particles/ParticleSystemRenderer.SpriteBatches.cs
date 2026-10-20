@@ -23,6 +23,7 @@ public sealed partial class ParticleSystemRenderer
     //连续纹理段独立提交，不重排透明粒子来压低绘制调用。
     private void DrawParticleBatches(ParticleSystem system, Camera camera, in ParticleCameraState cameraState)
     {
+        using var cpu = Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.ParticleGeometry);
         if (!system.textureSheetAnimation.enabled || system.textureSheetAnimation.mode != ParticleSystemAnimationMode.Sprites)
         {
             foreach (int i in order) { streamParticleIndex = i; AppendParticle(system, system.particles[i], in cameraState); }
@@ -48,6 +49,7 @@ public sealed partial class ParticleSystemRenderer
     //同帧每张贴图只复制一次动态材质参数，资源依赖依旧共享。
     private Material SpriteMaterial(Texture texture)
     {
+        using var cpu = Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.SpriteMaterial);
         if (!spriteMaterials.TryGetValue(texture, out var cached))
         {
             cached = new SpriteMaterialCache { material = new Material(sharedMaterial) };

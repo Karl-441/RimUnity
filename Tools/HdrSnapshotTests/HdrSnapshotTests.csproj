@@ -6,6 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../Source/RimUnity/Diagnostics/DpaDiagnostics.cs" Link="Runtime/DpaDiagnostics.cs" />
+    <Compile Include="../../Source/RimUnity/Diagnostics/PerformanceLab/LabCpuMetrics.cs" Link="Runtime/LabCpuMetrics.cs" />
     <Compile Include="../../Source/RimUnity/Rendering/Hdr/HdrDrawFrame.cs" Link="Runtime/HdrDrawFrame.cs" />
     <Compile Include="../../Source/RimUnity/Rendering/Hdr/SnapshotDrawBuffers.cs" Link="Runtime/SnapshotDrawBuffers.cs" />
     <Compile Include="../../Source/RimUnity/Rendering/Hdr/FrameMetadataCopier.cs" Link="Runtime/FrameMetadataCopier.cs" />

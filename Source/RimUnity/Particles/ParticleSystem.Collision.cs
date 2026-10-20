@@ -179,6 +179,8 @@ public sealed partial class ParticleSystem
     //同一帧每个碰撞对象只发送一次消息，完整逐次接触记录由 GetCollisionEvents 读取。
     private void DispatchPhysicsEvents()
     {
+        // No collision messages to deduplicate; trigger callbacks remain independent.
+        if (collisionEvents.Count == 0) { DispatchTriggerEvents(); return; }
         var targets = new HashSet<GameObject>();
         foreach (ParticleCollisionEvent item in collisionEvents)
             if (item.colliderComponent != null) targets.Add(item.colliderComponent.gameObject);

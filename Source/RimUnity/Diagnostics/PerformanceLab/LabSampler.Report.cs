@@ -35,7 +35,8 @@ internal sealed partial class LabSampler
             $"托管分配 {bytes / 1048576d:F2} MiB（{bytes / Math.Max(.001, Seconds) / 1048576d:F2} MiB/s）\n" +
             $"GC：{g0}/{g1}/{g2}；采样期新建 {last.Spawned} 个实例（{last.Spawned / Math.Max(.001, Seconds):F1}/秒）；限流 {last.ThrottledFrames} 帧\n" +
             $"粒子绘制提交累计：{beforeBatch} → {afterBatch}，减少 {(beforeBatch - afterBatch) * 100d / Math.Max(1, beforeBatch):F1}%（非 GPU 实测 DrawCall）\n" +
-            $"工作集起止：{samples[0].WorkingSetBytes / 1048576d:F1} → {last.WorkingSetBytes / 1048576d:F1} MiB";
+            $"工作集（采样前/后独立查询）：{startWorkingSet / 1048576d:F1} → " +
+            (endMemoryCaptured ? $"{workingSet / 1048576d:F1} MiB" : "未取得结束值：" + endMemoryError);
     }
 
     //支持显式导出、到时自动导出和退出时导出；失败保留内存样本供再次导出。
@@ -50,25 +51,31 @@ internal sealed partial class LabSampler
             string prefix = Path.Combine(directory, "effect-lab-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff"));
             var encoding = new UTF8Encoding(false);
             string config = JsonSerializer.Serialize(configuration, Json);
-            File.WriteAllText(prefix + ".txt", "RimUnity 特效性能测试场 / schema 3\n开始 UTC：" + startedUtc +
+            var stages = LabCpuReport.Stages(cpu); var batchReasons = LabCpuReport.Reasons(cpu);
+            File.WriteAllText(prefix + ".txt", "RimUnity 特效性能测试场 / schema 5\n开始 UTC：" + startedUtc +
                 "\n\n" + Summary() + "\n\n测试条件\n" + config + "\n\n实例创建耗时（包含加载、对象构建及激活；不含销毁和随后帧中的粒子预热，二者仍计入整帧）\n" +
                 string.Join("\n", spawnCosts.OrderByDescending(p => p.Value.MaxMs).Select(p =>
                     $"{p.Key} | 次数 {p.Value.Count} | 首次 {p.Value.FirstMs:F3}ms | 平均 {p.Value.TotalMs / p.Value.Count:F3}ms | 最大 {p.Value.MaxMs:F3}ms | 分配 {p.Value.AllocatedBytes}B")) +
-                "\n\n测量边界\n" + Caveats, encoding);
+                "\n\n" + CpuText(stages, batchReasons) + "\n\n测量边界\n" + Caveats, encoding);
             File.WriteAllText(prefix + ".json", JsonSerializer.Serialize(new
             {
-                Schema = 3, StartedUtc = startedUtc, StopReason = stopReason, Configuration = configuration,
-                Summary = Summary(), Caveats, SpawnCosts = spawnCosts, Frames = samples.Take(count).ToArray()
+                Schema = 5, StartedUtc = startedUtc, StopReason = stopReason, Configuration = configuration,
+                ProcessMemory = new { Mode = "BeforeAndAfterOnly", StartWorkingSetBytes = startWorkingSet,
+                    StartPrivateBytes = startPrivateBytes, EndCaptured = endMemoryCaptured,
+                    EndWorkingSetBytes = endMemoryCaptured ? (long?)workingSet : null,
+                    EndPrivateBytes = endMemoryCaptured ? (long?)privateBytes : null, EndError = endMemoryError },
+                Summary = Summary(), Caveats, Cpu = CpuJson(stages, batchReasons), SpawnCosts = spawnCosts, Frames = samples.Take(count).ToArray()
             }, Json), encoding);
             using (var csv = new StreamWriter(prefix + ".frames.csv", false, encoding))
             {
-                csv.WriteLine("frame,elapsed_ms,interval_ms,allocated_bytes,gen0,gen1,gen2,instances,systems,particles,submitted_items,managed_bytes,working_set_bytes,private_bytes,spawned,throttled_frames,detailed_probes,particle_draws_before_batch,particle_draws_after_batch");
+                csv.WriteLine("frame,elapsed_ms,interval_ms,allocated_bytes,gen0,gen1,gen2,instances,systems,particles,submitted_items,managed_bytes,working_set_bytes,private_bytes,spawned,throttled_frames,detailed_probes,particle_draws_before_batch,particle_draws_after_batch,main_thread_allocated_bytes,observer_cpu_ms,observer_allocated_bytes");
                 for (int i = 0; i < count; i++)
                 {
                     var s = samples[i];
-                    csv.WriteLine(FormattableString.Invariant($"{s.Frame},{s.ElapsedMs:F3},{s.IntervalMs:F3},{s.AllocatedBytes},{s.Gen0},{s.Gen1},{s.Gen2},{s.Instances},{s.Systems},{s.Particles},{s.SubmittedItems},{s.ManagedBytes},{s.WorkingSetBytes},{s.PrivateBytes},{s.Spawned},{s.ThrottledFrames},{s.DetailedProbes},{s.ParticleDrawsBeforeBatch},{s.ParticleDrawsAfterBatch}"));
+                    csv.WriteLine(FormattableString.Invariant($"{s.Frame},{s.ElapsedMs:F3},{s.IntervalMs:F3},{s.AllocatedBytes},{s.Gen0},{s.Gen1},{s.Gen2},{s.Instances},{s.Systems},{s.Particles},{s.SubmittedItems},{s.ManagedBytes},{s.WorkingSetBytes},{s.PrivateBytes},{s.Spawned},{s.ThrottledFrames},{s.DetailedProbes},{s.ParticleDrawsBeforeBatch},{s.ParticleDrawsAfterBatch},{s.MainThreadAllocatedBytes},{s.ObserverCpuMs:F6},{s.ObserverAllocatedBytes}"));
                 }
             }
+            WriteCpuFrames(prefix, encoding);
             lastReport = prefix + ".txt";
             lab.Status = "报告已导出：" + lastReport;
             Log.Message("[RimUnity] " + lab.Status);
