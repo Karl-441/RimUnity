@@ -50,7 +50,15 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File Tools/Verify-Static.ps1 
 `CatalogPolicyTests`、`MemoryAttributionTests`、`SpikeCaptureTests`、`WarmupTests`。
 
 `RenderDiagnosticsTests` 不在里面：它要 `<RimUnity.dll> <游戏目录> <0Harmony.dll>` 三个参数，
-只能在第二层跑。名单要改时同步改脚本顶部的默认参数。
+只能在第二层跑，由 `manual-verify.yml` 的「渲染诊断测试（需要游戏）」步骤执行。
+本地等价命令：
+
+```powershell
+dotnet run --project Tools/RenderDiagnosticsTests -c Release -- `
+  1.7/Assemblies/RimUnity.dll $env:RIMWORLD_DIR $env:HARMONY_PATH
+```
+
+名单要改时同步改脚本顶部的默认参数。
 
 ```powershell
 pwsh -File Tools/Test-OfflineProjects.ps1     # 本地等价命令
