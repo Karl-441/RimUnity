@@ -12,7 +12,7 @@ internal static class Program
     { if (!valid) throw new Exception(message); checks++; }
     private static void Main()
     {
-        Nesting(); Lifecycle(); Windows(); Batch(); ObserverCost(); Reports();
+        Nesting(); Lifecycle(); Windows(); Batch(); Pages(); ObserverCost(); Reports();
         Console.WriteLine($"PASS {checks} CPU capture/batch checks (production collector and batch code; fake mesh/host, no GPU).");
     }
     private static void Nesting()
@@ -91,9 +91,11 @@ internal static class Program
         Check(!Append(a), "inactive draw not batched");
         ParticleDrawBatch.Begin();
         Check(Append(a) && Append(a) && Append(b), "compatible adjacent inputs accepted");
-        Check(Graphics.Draws.Count == 1 && Graphics.Draws[0].Indices.SequenceEqual(new[] { 0, 1, 2, 3, 4, 5 }), "batch preserves triangle order and offsets");
+        Check(Graphics.Draws.Count == 0, "material change closes a range without publishing an unfinished page");
         Append(b, 1); b.engineMaterial.Version++; Append(b, 1);
         Check(!Append(a, block: new MaterialPropertyBlock { PropertyCount = 1 }), "property block preserves independent path");
+        Check(Graphics.Draws[0].Indices.SequenceEqual(new[] { 0, 1, 2, 3, 4, 5 }), "shared page preserves triangle order and offsets");
+        Check(Graphics.Draws.Count == 4 && Graphics.Draws.Select(d => d.Mesh).Distinct().Count() == 1, "incompatible input drains all prior ranges in one shared page");
         Check(!Append(a, block: new MaterialPropertyBlock { HasStorageBindings = true }), "storage binding preserves independent path");
         ParticleDebugWindow.Capturing = true; Check(!Append(a), "debug capture rejected"); ParticleDebugWindow.Capturing = false;
         Check(!Append(new Material { passCount = 2 }), "multipass rejected");
@@ -117,6 +119,30 @@ internal static class Program
         Check(cpu.InvalidScopes == 0, "batch exception leaves balanced collector stack");
         Check(LabCpuReport.Reasons(cpu)[(int)LabBatchReason.Accepted].Count > 0, "reason report populated");
         ParticleDrawBatch.Clear();
+    }
+    private static void Pages()
+    {
+        Graphics.Draws.Clear(); ParticleDrawBatch.Sampling = true; Time.frameCount++;
+        var a = new Material(); var b = new Material();
+        ParticleDrawBatch.Begin(); Append(a); Append(b); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        Check(Graphics.Draws.Select(d => d.Material).SequenceEqual(new[] { a, b, a }), "ABA materials retain order, no global regrouping");
+        Check(Graphics.Draws.Select(d => d.Mesh).Distinct().Count() == 1 && ParticleDrawBatch.UploadPages == 1, "multiple material ranges share one upload page");
+        Check(Graphics.Draws.SelectMany(d => d.Indices).SequenceEqual(Enumerable.Range(0, 9)), "range index offsets retain all triangles");
+        var firstPage = Graphics.Draws[0].Mesh;
+        ParticleDrawBatch.Begin(); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        Check(!ReferenceEquals(firstPage, Graphics.Draws[^1].Mesh), "same-frame cameras get independent mesh pages");
+        Check(firstPage.vertexCount == 9 && firstPage.Submeshes.Count == 3, "later camera cannot overwrite earlier page geometry");
+        Time.frameCount++; Graphics.Draws.Clear();
+        ParticleDrawBatch.Begin();
+        for (int i = 0; i < ParticleDrawBatch.SegmentLimit + 1; i++) Append(i % 2 == 0 ? a : b);
+        ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        Check(Graphics.Draws.Count == ParticleDrawBatch.SegmentLimit + 1 && ParticleDrawBatch.UploadPages == 2, "range limit creates bounded pages without losing draws");
+        Time.frameCount++; Graphics.Draws.Clear();
+        ParticleDrawBatch.Begin(); Append(a); Append(b); ParticleDrawBatch.End();
+        Check(Graphics.Draws.Count == 0, "aborted page publishes no unfinished ranges");
+        ParticleDrawBatch.Begin(); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        Check(Graphics.Draws.Count == 1 && Graphics.Draws[0].Submesh == 0, "aborted range references do not leak into the next page");
+        ParticleDrawBatch.Clear(); ParticleDrawBatch.Sampling = false;
     }
     private static void ObserverCost()
     {
@@ -154,12 +180,12 @@ internal static class Program
         string prefix = Path.ChangeExtension(sampler.LastReport, null);
         using var json = JsonDocument.Parse(File.ReadAllText(prefix + ".json"));
         var root = json.RootElement;
-        Check(root.GetProperty("Schema").GetInt32() == 5 && root.GetProperty("Cpu").GetProperty("Frames").GetInt32() == 2, "schema and frame count exported");
+        Check(root.GetProperty("Schema").GetInt32() == 6 && root.GetProperty("Cpu").GetProperty("Frames").GetInt32() == 2, "schema and frame count exported");
         Check(root.GetProperty("Cpu").GetProperty("Enabled").GetBoolean() && !root.GetProperty("Configuration").GetProperty("RuntimeIsStandalone").GetBoolean(), "source/measurement metadata exported");
         var bridge = root.GetProperty("Cpu").GetProperty("Stages")[0];
         Check(bridge.GetProperty("Calls").GetInt64() == 2 && bridge.GetProperty("SelfBytesPerFrame").GetDouble() >= 256, "real sampler exports phase calls/allocations");
         var rows = File.ReadAllLines(prefix + ".frames.csv");
-        Check(rows.Length == 3 && rows.All(row => row.Split(',').Length == 22), "frame CSV headers/rows align including observer columns");
+        Check(rows.Length == 3 && rows.All(row => row.Split(',').Length == 23), "frame CSV headers/rows align including observer/page columns");
         Check(File.ReadAllLines(prefix + ".stages.csv").Length == 3 && File.ReadAllLines(prefix + ".batch.csv").Length == 3, "stage/batch CSV frame rows exported");
         Check(root.GetProperty("Frames")[0].GetProperty("ObserverAllocatedBytes").GetInt64() >= 0, "observer counters serialized");
         Check(root.GetProperty("ProcessMemory").GetProperty("EndCaptured").GetBoolean(), "separate end memory query recorded");

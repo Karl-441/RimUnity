@@ -5,15 +5,18 @@ using RimUnity.Diagnostics;
 
 namespace RimUnity;
 
-//连续且材质一致的粒子绘制共用动态网格，不持有或复用预制体实例。
+//材质段保留绘制顺序，共用有界网格页上传；不持有或复用预制体实例。
 internal static class ParticleDrawBatch
 {
     internal const int VertexLimit = 65536, IndexLimit = 196608;
+    internal const int SegmentLimit = 256;
+    private readonly record struct Segment(Material Material, int Layer);
+    private static readonly List<Segment> segments = new();
     private sealed class Slot
     {
         internal readonly Mesh Mesh = new() { name = "RimUnity Shared Particle Batch", indexFormat = IndexFormat.UInt32 };
         internal int Frame;
-        //每个相机及连续绘制段使用独立槽，提交后同帧不再改写。
+        //每个相机及上传页使用独立槽，提交后同帧不再改写。
         internal Slot() => Mesh.MarkDynamic();
     }
     private static readonly List<Slot> slots = new();
@@ -25,6 +28,8 @@ internal static class ParticleDrawBatch
     internal static int Inputs { get; private set; }
     internal static int Outputs { get; private set; }
     internal static int IndependentDraws { get; private set; }
+    private static int uploadPages;
+    internal static int UploadPages => frame == Time.frameCount ? uploadPages : 0;
     internal static int Before => frame == Time.frameCount ? Inputs + IndependentDraws : 0;
     internal static int After => frame == Time.frameCount ? Outputs + IndependentDraws : 0;
 
@@ -35,13 +40,13 @@ internal static class ParticleDrawBatch
         if (frame != Time.frameCount)
         {
             frame = Time.frameCount; cursor = 0;
-            Inputs = Outputs = IndependentDraws = 0;
+            Inputs = Outputs = IndependentDraws = uploadPages = 0;
             Trim();
         }
         active = true;
     }
 
-    //兼容的相邻项按原索引顺序追加；改变材质、图层或超过容量就先提交已有段。
+    //相邻同材质仍合并成一段；材质切换只结束子网格，不立即上传整页。
     internal static bool TryAppend(Material source, int drawLayer, MaterialPropertyBlock properties,
         List<Vector3> vertices, List<Vector3> normals, List<Vector4> tangents, List<Color32> colors,
         List<Vector4> uv0, List<Vector4> uv1, List<Vector4> uv2, List<int> indices)
@@ -70,16 +75,23 @@ internal static class ParticleDrawBatch
                 : source.engineMaterial.Version != materialVersion ? LabBatchReason.MaterialVersionChanged
                 : pending.Mesh.vertexCount + vertices.Count > VertexLimit ? LabBatchReason.BatchVertexLimit
                 : indexCount + indices.Count > IndexLimit ? LabBatchReason.BatchIndexLimit : null;
-            if (boundary.HasValue) { LabCpuMetrics.Batch(boundary.Value); Flush(); }
+            if (boundary.HasValue)
+            {
+                LabCpuMetrics.Batch(boundary.Value);
+                bool full = pending.Mesh.vertexCount + vertices.Count > VertexLimit || indexCount + indices.Count > IndexLimit
+                    || segments.Count + 1 >= SegmentLimit;
+                if (full) Flush(); else CloseSegment();
+            }
         }
         if (pending == null)
         {
             if (cursor == slots.Count) slots.Add(new Slot());
             pending = slots[cursor++]; pending.Frame = frame; pending.Mesh.Clear();
-            material = source; layer = drawLayer; materialVersion = source.engineMaterial.Version; indexCount = 0;
+            indexCount = 0;
         }
+        if (material == null) { material = source; layer = drawLayer; materialVersion = source.engineMaterial.Version; }
         using (LabCpuMetrics.Measure(LabCpuStage.BatchGeometry))
-            pending.Mesh.AppendParticleGeometry(vertices, normals, tangents, colors, uv0, uv1, uv2, indices);
+            pending.Mesh.AppendParticleGeometry(vertices, normals, tangents, colors, uv0, uv1, uv2, indices, segments.Count);
         LabCpuMetrics.Work(LabCpuStage.BatchGeometry, vertices.Count, indices.Count);
         LabCpuMetrics.Batch(LabBatchReason.Accepted);
         indexCount += indices.Count;
@@ -87,22 +99,37 @@ internal static class ParticleDrawBatch
         return true;
     }
 
-    //只有一个颜色 Pass，合并后仍保留原来的透明三角形先后顺序。
+    private static void CloseSegment()
+    {
+        if (material == null) return;
+        segments.Add(new(material, layer)); material = null;
+    }
+
+    //先完成整页再按原顺序提交子网格；不兼容项必须在自己的提交之前 Flush。
     internal static void Flush()
     {
         if (pending == null) return;
         using var cpu = LabCpuMetrics.Measure(LabCpuStage.BatchFlush);
         using var spike = Diagnostics.ParticleSpikeCapture.Measure("Particle.BatchFlush");
-        using (LabCpuMetrics.Measure(LabCpuStage.DrawMesh))
-            Graphics.DrawMesh(pending.Mesh, Matrix4x4.identity, material, layer);
-        if (Sampling) Outputs++;
-        pending = null; material = null; indexCount = 0;
+        try
+        {
+            CloseSegment();
+            for (int i = 0; i < segments.Count; i++)
+            {
+                var segment = segments[i];
+                using (LabCpuMetrics.Measure(LabCpuStage.DrawMesh))
+                    Graphics.DrawMesh(pending.Mesh, Matrix4x4.identity, segment.Material, segment.Layer, i);
+                if (Sampling) Outputs++;
+            }
+            if (Sampling) uploadPages++;
+        }
+        finally { pending = null; material = null; indexCount = 0; segments.Clear(); }
     }
 
     //异常退出丢弃未提交段，不把半成品继续送进宿主队列。
     internal static void End()
     {
-        pending = null; material = null; indexCount = 0; active = false;
+        pending = null; material = null; indexCount = 0; active = false; segments.Clear();
     }
 
     //短期峰值复用容量；超过 128 个的闲置尾槽及时回收，其余闲置 120 帧回收。
@@ -121,6 +148,6 @@ internal static class ParticleDrawBatch
     {
         End();
         foreach (var slot in slots) Object.DestroyImmediate(slot.Mesh);
-        slots.Clear(); cursor = 0; frame = -1; Inputs = Outputs = IndependentDraws = 0;
+        slots.Clear(); cursor = 0; frame = -1; Inputs = Outputs = IndependentDraws = uploadPages = 0;
     }
 }

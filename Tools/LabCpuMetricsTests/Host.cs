@@ -21,22 +21,24 @@ namespace RimUnity
         internal IndexFormat indexFormat;
         internal int vertexCount;
         internal readonly List<int> Indices = new();
+        internal readonly List<List<int>> Submeshes = new();
         internal static bool FailAppend;
         internal void MarkDynamic() { }
-        internal void Clear() { vertexCount = 0; Indices.Clear(); }
+        internal void Clear() { vertexCount = 0; Indices.Clear(); Submeshes.Clear(); }
         internal void AppendParticleGeometry(List<Vector3> vertices, List<Vector3> normals, List<Vector4> tangents,
-            List<Color32> colors, List<Vector4> uv0, List<Vector4> uv1, List<Vector4> uv2, List<int> indices)
+            List<Color32> colors, List<Vector4> uv0, List<Vector4> uv1, List<Vector4> uv2, List<int> indices, int submesh)
         {
             if (FailAppend) throw new InvalidOperationException("fixture append failure");
-            foreach (int index in indices) Indices.Add(index + vertexCount);
+            while (Submeshes.Count <= submesh) Submeshes.Add(new());
+            foreach (int index in indices) { Indices.Add(index + vertexCount); Submeshes[submesh].Add(index + vertexCount); }
             vertexCount += vertices.Count;
         }
     }
     internal static class Graphics
     {
-        internal static readonly List<(Material Material, int Layer, int[] Indices)> Draws = new();
-        internal static void DrawMesh(Mesh mesh, Matrix4x4 matrix, Material material, int layer)
-            => Draws.Add((material, layer, mesh.Indices.ToArray()));
+        internal static readonly List<(Material Material, int Layer, int[] Indices, Mesh Mesh, int Submesh)> Draws = new();
+        internal static void DrawMesh(Mesh mesh, Matrix4x4 matrix, Material material, int layer, int submesh = 0)
+            => Draws.Add((material, layer, mesh.Submeshes[submesh].ToArray(), mesh, submesh));
     }
     internal static class Object
     {

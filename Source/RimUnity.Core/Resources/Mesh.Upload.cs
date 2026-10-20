@@ -67,7 +67,9 @@ public sealed partial class Mesh
                 if (format == IndexFormat.UInt32) ((uint*)indicesTarget)[cursor++] = (uint)index;
                 else ((ushort*)indicesTarget)[cursor++] = checked((ushort)index);
             }
-            storage.SetSubMesh(s, new(start, cursor - start, bounds: storage.Bounds));
+            var bounds = particleBoundsValid && s < particleSubmeshBounds.Count ? particleSubmeshBounds[s] : meshBounds;
+            Vector3 subMin = bounds.min, subMax = bounds.max;
+            storage.SetSubMesh(s, new(start, cursor - start, bounds: new MeshBounds(subMin.x, subMin.y, subMin.z, subMax.x, subMax.y, subMax.z)));
         }
         native.MarkCpuStorageChanged(); dirty = false;
         edgeVersion++;

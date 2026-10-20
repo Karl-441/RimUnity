@@ -38,7 +38,7 @@ internal sealed partial class LabSampler : IDisposable
         int Gen0, int Gen1, int Gen2, int Instances, int Systems, int Particles, int SubmittedItems,
         long ManagedBytes, long WorkingSetBytes, long PrivateBytes, int Spawned, int ThrottledFrames, bool DetailedProbes,
         int ParticleDrawsBeforeBatch, int ParticleDrawsAfterBatch,
-        long MainThreadAllocatedBytes, double ObserverCpuMs, long ObserverAllocatedBytes);
+        long MainThreadAllocatedBytes, double ObserverCpuMs, long ObserverAllocatedBytes, int ParticleUploadPages);
 
     //实例化阶段单独按资源汇总，预热和逐帧模拟耗时由详细探针报告定位。
     internal sealed class SpawnCost
@@ -78,7 +78,8 @@ internal sealed partial class LabSampler : IDisposable
             GameVersion = typeof(Game).Assembly.ManifestModule.ModuleVersionId.ToString(),
             ProcessorCount = Environment.ProcessorCount, Resolution = UnityEngine.Screen.width + "x" + UnityEngine.Screen.height,
             BloomEnabled = RimUnityMod.Bloom.Snapshot().Enabled,
-            CpuStagesEnabled = lab.MeasureCpuStages, CpuStageSchema = 2,
+            CpuStagesEnabled = lab.MeasureCpuStages, CpuStageSchema = 3,
+            ParticleUploadMode = "OrderedSubmeshPages", ParticlePageSegmentLimit = ParticleDrawBatch.SegmentLimit,
             ProcessMemorySampling = "BeforeAndAfterOnly; frame process memory columns retain the before-sample snapshot",
             RuntimeVersion = RuntimeInfo.Version, RuntimeProvider = RuntimeInfo.Provider,
             RuntimeIsStandalone = RuntimeInfo.IsStandalone, RuntimePayloadHash = RuntimeInfo.PayloadHash
@@ -133,7 +134,7 @@ internal sealed partial class LabSampler : IDisposable
                 submitted, managedBytes, workingSet, privateBytes, lab.Spawned - spawnStart,
                 lab.ThrottledFrames - throttledStart, ParticleSpikeCapture.LabCaptureActive,
                 ParticleDrawBatch.Before, ParticleDrawBatch.After,
-                Math.Max(0, mainTotal - mainAllocated), 0, 0);
+                Math.Max(0, mainTotal - mainAllocated), 0, 0, ParticleDrawBatch.UploadPages);
             count++;
             previous = now; allocated = total; mainAllocated = mainTotal; previous0 = g0; previous1 = g1; previous2 = g2;
             if (refresh)
@@ -141,6 +142,7 @@ internal sealed partial class LabSampler : IDisposable
                     $"当前 {1000 / Math.Max(.001, samples[count - 1].IntervalMs):F1} FPS · {samples[count - 1].IntervalMs:F2} ms\n" +
                     $"实例 {lab.LiveCount} · 系统 {particles.Systems} · 粒子 {particles.Particles} · 提交项 {submitted}\n" +
                     $"粒子绘制提交：合批前 {ParticleDrawBatch.Before} → 合批后 {ParticleDrawBatch.After}\n" +
+                    $"共享粒子网格上传页：{ParticleDrawBatch.UploadPages}\n" +
                     $"托管堆 {managedBytes / 1048576d:F1} MiB · 采样前工作集 {startWorkingSet / 1048576d:F1} MiB";
             samples[count - 1] = samples[count - 1] with
             {

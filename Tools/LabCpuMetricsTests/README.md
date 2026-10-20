@@ -10,6 +10,10 @@ disabled baseline, scene exit, batch order and the first decisive batch rejectio
 or flush boundary. Also covers complete timeline windows, missing-boundary omission,
 empty-scene sampling, before/after process memory snapshots, and forces the periodic
 GC/UI update 60 times to report Observer cost without waiting a minute.
+Shared-page checks retain ABA material order, verify index offsets, drain before
+incompatible inputs, isolate same-frame cameras, enforce page/range bounds and
+discard unfinished pages. The fake host does not validate actual Core mesh packing;
+that check lives in ParticleUploadTests and uses real installed host storage.
 It does not validate actual Shader eligibility, GPU work, game
 UI layout or in-game performance.
 

@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RimWorldDir Condition="'$(RimWorldDir)' == ''">$(RIMWORLD_DIR)</RimWorldDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="RimUnity.Core" HintPath="../../1.7/Assemblies/RimUnity.Core.dll" Private="false" />
+    <Reference Include="$(RimWorldDir)/Waylith.dll;$(RimWorldDir)/Waylith.UnityCompat.dll;$(RimWorldDir)/UnityStubs.dll;$(RimWorldDir)/Brutal.Core.*.dll;$(RimWorldDir)/Brutal.Vulkan*.dll" Private="false" />
+  </ItemGroup>
+</Project>

@@ -183,6 +183,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             if (indices.Count == 0) { LabCpuMetrics.Batch(LabBatchReason.Empty); dpaRoute = 1; return; }
             if (uiEntry != null)
             {
+                ParticleDrawBatch.Flush();
                 LabCpuMetrics.Batch(LabBatchReason.UI);
                 CaptureDiagnostics(mat, null);
                 using (LabCpuMetrics.Measure(LabCpuStage.SubmitUI)) SubmitUI(mat);
@@ -190,6 +191,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             }
             if (cameraUiEntry != null)
             {
+                ParticleDrawBatch.Flush();
                 LabCpuMetrics.Batch(LabBatchReason.CameraUI);
                 using (LabCpuMetrics.Measure(LabCpuStage.SubmitUI)) PrepareSubmitUI(mat);
             }
