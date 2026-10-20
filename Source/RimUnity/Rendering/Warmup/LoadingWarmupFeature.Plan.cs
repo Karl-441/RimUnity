@@ -34,8 +34,12 @@ internal sealed partial class LoadingWarmupFeature
             };
             if (bloom && Composite() is { } composite)
             {
-                var layers = BloomHooks.Get(composite).PrepareWarmup(in ctx, scene);
-                targets.Add((layers.renderer, layers.pass, VkSampleCountFlags._1Bit, true, true));
+                var pipeline = BloomHooks.Get(composite);
+                if (pipeline != null)
+                {
+                    var layers = pipeline.PrepareWarmup(in ctx, scene);
+                    targets.Add((layers.renderer, layers.pass, VkSampleCountFlags._1Bit, true, true));
+                }
             }
             foreach (var target in targets)
             {
@@ -68,8 +72,10 @@ internal sealed partial class LoadingWarmupFeature
     {
         var composite = Composite();
         if (composite == null) return 0;
+        var pipeline = BloomHooks.Get(composite);
+        if (pipeline == null) return 0;
         var scene = HdrMapHooks.WarmupScene(RequiredField(MapPass(), "sceneTargets"), ctx.SubmissionFrameIndex);
-        return BloomHooks.Get(composite).PrepareEfxWarmup(in ctx, scene, effects);
+        return pipeline.PrepareEfxWarmup(in ctx, scene, effects);
     }
 
     //地图主通道拥有预热所需的附件和原生渲染器。
