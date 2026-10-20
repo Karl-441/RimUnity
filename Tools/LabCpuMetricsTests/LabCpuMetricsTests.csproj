@@ -7,5 +7,7 @@
     <Compile Include="../../Source/RimUnity/Diagnostics/PerformanceLab/LabSampler.cs" Link="Runtime/LabSampler.cs" />
     <Compile Include="../../Source/RimUnity/Diagnostics/PerformanceLab/LabSampler.Report.cs" Link="Runtime/LabSampler.Report.cs" />
     <Compile Include="../../Source/RimUnity/Diagnostics/PerformanceLab/LabSampler.CpuReport.cs" Link="Runtime/LabSampler.CpuReport.cs" />
+    <Compile Include="../../Source/RimUnity/Diagnostics/PerformanceLab/LabPopulation.cs" Link="Runtime/LabPopulation.cs" />
+    <Compile Include="../../Source/RimUnity/Diagnostics/PerformanceLab/LabSampler.PopulationReport.cs" Link="Runtime/LabSampler.PopulationReport.cs" />
   </ItemGroup>
 </Project>

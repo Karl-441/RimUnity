@@ -179,6 +179,13 @@ internal sealed partial class PerformanceLab
         return (systems, particles);
     }
 
+    // Include dynamically attached descendants by hierarchy, not only the initial component list.
+    internal void CollectPopulationRoots(HashSet<GameObject> target)
+    {
+        target.Clear();
+        foreach (var effect in live) if (effect.Root != null) target.Add(effect.Root);
+    }
+
     //详细探针仍使用现有有界采集器，并由测试场负责停止自己启动的会话。
     internal void StartDetailedCapture()
     {

@@ -12,7 +12,7 @@ internal static class Program
     { if (!valid) throw new Exception(message); checks++; }
     private static void Main()
     {
-        Nesting(); Lifecycle(); Windows(); Batch(); Pages(); PoolLifecycle(); ObserverCost(); Reports();
+        Nesting(); Lifecycle(); Windows(); Batch(); Pages(); PoolLifecycle(); Population(); ObserverCost(); Reports();
         Console.WriteLine($"PASS {checks} CPU capture/batch checks (production collector and batch code; fake mesh/host, no GPU).");
     }
     private static void Nesting()
@@ -198,6 +198,54 @@ internal static class Program
             "scene clear is idempotent and drops all pool memory references and counters");
         ParticleDrawBatch.Sampling = false; Graphics.Draws.Clear();
     }
+    private static void Population()
+    {
+        var lab = new PerformanceLab(); var roots = new HashSet<GameObject>();
+        var owner = new GameObject { name = "same-name" }; lab.OwnedRoots.Add(owner);
+        Camera.main = new Camera { cullingMask = 1 }; Camera.Active.Add(Camera.main);
+        Camera.Active.Add(new Camera { targetTexture = new object() });
+        ParticleSystem Add(int particles, bool renderer = true, bool owned = false)
+        {
+            var system = new ParticleSystem { particleCount = particles, Renderer = renderer ? new ParticleSystemRenderer() : null };
+            system.gameObject.name = "same-name";
+            if (owned) system.transform.parent = owner.transform;
+            ParticleSystem.Active.Add(system); return system;
+        }
+        var ours = Add(10, owned: true); Add(0, owned: true); Add(0);
+        var disabledRenderer = Add(7); disabledRenderer.Renderer.isActiveAndEnabled = false;
+        Add(0).HasCanvas = true; Add(0).gameObject.layer = 3; Add(0, renderer: false);
+        Add(99).isActiveAndEnabled = false;
+        var state = LabPopulation.Read(lab, roots);
+        Check(state.ActiveSystems == 7 && state.ActiveParticles == 17 && state.OwnedSystems == 2 && state.BackgroundSystems == 5,
+            "global/owned/background populations use hierarchy rather than object names");
+        Check(state.OwnedParticles == 10 && state.BackgroundParticles == 7, "particle attribution excludes inactive systems");
+        Check(state.RendererSystems == 5 && state.MainCameraCandidates == 3 && state.OwnedMainCameraCandidates == 2,
+            "renderer/camera candidates distinguish disabled, missing, UI and masked paths");
+        Check(state.BackgroundRendererSystems == 3 && state.EmptyRendererSystems == 4 && state.BackgroundEmptyRendererSystems == 3,
+            "empty renderer systems remain observable without being counted as submissions");
+        Check(roots.Count == 0, "population read clears temporary ownership references");
+        for (int i = 0; i < 10000; i++) _ = LabPopulation.Read(lab, roots);
+        long bytes = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 10000; i++) _ = LabPopulation.Read(lab, roots);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - bytes;
+        Check(allocated == 0, "warmed population scans allocate zero: " + allocated);
+        ours.transform.parent = null;
+        Check(LabPopulation.Read(lab, roots).OwnedSystems == 1, "reparented systems are reclassified on the next sample");
+        var capture = LabPopulation.Capture(lab, roots);
+        Check(capture.ActiveCameras == 2 && capture.OffscreenCameras == 1 && capture.Background.Length == 6 && !capture.Truncated,
+            "boundary inventory includes names, cameras and background systems");
+        Check(capture.OwnedEmptyRenderers.Length == 1 && !capture.OwnedEmptyTruncated,
+            "owned empty renderers are listed separately from background systems");
+        for (int i = 0; i < 150; i++) Add(0).gameObject.name = new string('x', 200) + "\n";
+        capture = LabPopulation.Capture(lab, roots);
+        Check(capture.Background.Length == LabPopulation.DetailLimit && capture.Truncated && capture.Counts.BackgroundSystems == 156,
+            "bounded identity list does not truncate global numeric totals");
+        Check(capture.Background.All(e => e.Name.Length <= 80 && !e.Name.Contains('\n')) && roots.Count == 0,
+            "inventory text is bounded and retains no ownership roots");
+        lab.OwnedRoots.Clear();
+        Check(LabPopulation.Read(lab, roots).OwnedSystems == 0, "cleared lab cannot retain earlier ownership");
+        ParticleSystem.Active.Clear(); Camera.Active.Clear(); Camera.main = null;
+    }
     private static void ObserverCost()
     {
         const int iterations = 100000;
@@ -241,7 +289,12 @@ internal static class Program
         string prefix = Path.ChangeExtension(sampler.LastReport, null);
         using var json = JsonDocument.Parse(File.ReadAllText(prefix + ".json"));
         var root = json.RootElement;
-        Check(root.GetProperty("Schema").GetInt32() == 7 && root.GetProperty("Cpu").GetProperty("Frames").GetInt32() == 2, "schema and frame count exported");
+        Check(root.GetProperty("Schema").GetInt32() == 8 && root.GetProperty("Cpu").GetProperty("Frames").GetInt32() == 2, "schema and frame count exported");
+        Check(root.GetProperty("ParticlePopulation").GetProperty("Start").GetProperty("Counts").GetProperty("ActiveSystems").GetInt32() == 0
+            && root.GetProperty("Frames")[0].GetProperty("ParticlePopulation").GetProperty("BackgroundSystems").GetInt32() == 0,
+            "population boundaries and per-frame numeric attribution exported");
+        Check(File.ReadAllLines(prefix + ".population.csv").Length == 3
+            && File.ReadAllLines(prefix + ".population.csv").All(row => row.Split(',').Length == 14), "population CSV rows and schema align");
         Check(root.GetProperty("ParticlePool").GetProperty("Start").GetProperty("Pages").GetInt32() == 1
             && root.GetProperty("ParticlePool").GetProperty("End").GetProperty("Pages").GetInt32() == 0
             && root.GetProperty("ParticlePool").GetProperty("PeakPages").GetInt32() == 2
