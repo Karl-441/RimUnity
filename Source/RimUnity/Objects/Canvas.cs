@@ -42,14 +42,20 @@ public class Canvas : MonoBehaviour
         {
             referencePixelsPerUnit = scaler.referencePixelsPerUnit;
             float scale = scaler.scaleFactor;
-            if (scaler.uiScaleMode == CanvasScaler.ScaleMode.ConstantPhysicalSize)
+            //世界画布使用动态像素密度，不参与屏幕尺寸或物理单位换算。
+            if (renderMode == RenderMode.WorldSpace)
+                scale = scaler.dynamicPixelsPerUnit;
+            else if (scaler.uiScaleMode == CanvasScaler.ScaleMode.ConstantPhysicalSize)
             {
                 float dpi = Screen.dpi > 0 ? Screen.dpi : scaler.fallbackScreenDPI;
                 float units = scaler.physicalUnit switch { CanvasScaler.Unit.Centimeters => 2.54f, CanvasScaler.Unit.Millimeters => 25.4f, CanvasScaler.Unit.Points => 72, CanvasScaler.Unit.Picas => 6, _ => 1 };
                 scale = dpi / units; referencePixelsPerUnit = scaler.referencePixelsPerUnit * units / scaler.defaultSpriteDPI;
             }
-            if (scaler.uiScaleMode == CanvasScaler.ScaleMode.ScaleWithScreenSize)
+            else if (scaler.uiScaleMode == CanvasScaler.ScaleMode.ScaleWithScreenSize)
             {
+                if (!float.IsFinite(scaler.referenceResolution.x) || scaler.referenceResolution.x <= 0 ||
+                    !float.IsFinite(scaler.referenceResolution.y) || scaler.referenceResolution.y <= 0)
+                    throw new System.InvalidOperationException($"Canvas“{gameObject.name}”的参考分辨率必须为有限正数：{scaler.referenceResolution}。");
                 float x = Screen.width / scaler.referenceResolution.x;
                 float y = Screen.height / scaler.referenceResolution.y;
                 scale = scaler.screenMatchMode switch
@@ -62,7 +68,10 @@ public class Canvas : MonoBehaviour
             //只写最终缩放值，避免每次准备都使整棵画布布局失效。
             scaleFactor = scale;
         }
-        if (scaleFactor <= 0f) throw new System.InvalidOperationException("Canvas 的缩放系数必须大于零。");
+        if (!float.IsFinite(scaleFactor) || scaleFactor <= 0f)
+            throw new System.InvalidOperationException($"Canvas“{gameObject.name}”的缩放系数必须为有限正数：scaleFactor={scaleFactor}，renderMode={renderMode}，"
+                + $"screen={Screen.width}x{Screen.height}，uiScaleMode={scaler?.uiScaleMode}，scalerScale={scaler?.scaleFactor}，"
+                + $"dynamicPixelsPerUnit={scaler?.dynamicPixelsPerUnit}，fallbackDPI={scaler?.fallbackScreenDPI}。");
         if (renderMode == RenderMode.WorldSpace) return;
         RectTransform rt = (RectTransform)transform;
         rt.anchorMin = rt.anchorMax = Vector2.zero;

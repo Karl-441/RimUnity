@@ -43,6 +43,8 @@ internal static partial class UguiRuntime
         WarnedGraphics.RemoveWhere(g => g == null);
         Canvases.Sort((a, b) => a.sortingOrder != b.sortingOrder ? a.sortingOrder.CompareTo(b.sortingOrder) : a.GetInstanceID().CompareTo(b.GetInstanceID()));
         Entries.Clear();
+        //窗口没有可绘制面积时清空提交，保留画布上一次有效布局，恢复尺寸后重新准备。
+        if (Screen.width <= 0 || Screen.height <= 0) return;
         foreach (Canvas canvas in Canvases)
         {
             if (!canvas.isActiveAndEnabled || !canvas.isRootCanvas) continue;

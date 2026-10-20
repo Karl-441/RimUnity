@@ -10,7 +10,7 @@ public class CanvasScaler : MonoBehaviour
     public ScreenMatchMode screenMatchMode { get; set => SetProperty(ref field, value); }
     public Unit physicalUnit { get; set => SetProperty(ref field, value); } = Unit.Points;
     public float referencePixelsPerUnit { get; set => SetProperty(ref field, value); } = 100f;
-    public float scaleFactor { get; set => SetProperty(ref field, value); } = 1f;
+    public float scaleFactor { get; set => SetProperty(ref field, Mathf.Max(.01f, value)); } = 1f;
     public Vector2 referenceResolution { get; set => SetProperty(ref field, value); } = new(800, 600);
     public float matchWidthOrHeight { get; set => SetProperty(ref field, value); }
     public float fallbackScreenDPI { get; set => SetProperty(ref field, value); } = 96f;
