@@ -24,7 +24,7 @@
 - `ExportProcessorTests`：Unity 导出处理器与文档库。
 - `PublishingTests`：资源发布、回滚、清单及增量导出。
 - `MemoryAttributionTests`：显存归责模型。
-- `RenderDiagnosticsTests`：运行时渲染诊断。
+- `RenderDiagnosticsTests`：运行时渲染诊断；需要游戏与 Harmony，由第二层 CI 运行。
 - `ScreenEfxTests`：屏幕特效播放与参数快照；需要游戏目录（参数或环境变量 `RIMWORLD_DIR`）。
 - `SpikeCaptureTests`：性能尖峰采样和诊断数据。
 - `TrailGeometryTests`：拖尾几何、折射与资源绑定；参数见其 README。

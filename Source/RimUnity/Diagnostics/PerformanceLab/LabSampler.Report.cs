@@ -57,14 +57,15 @@ internal sealed partial class LabSampler
             var encoding = new UTF8Encoding(false);
             string config = JsonSerializer.Serialize(configuration, Json);
             var stages = LabCpuReport.Stages(cpu); var batchReasons = LabCpuReport.Reasons(cpu);
-            File.WriteAllText(prefix + ".txt", "RimUnity 特效性能测试场 / schema 7\n开始 UTC：" + startedUtc +
+            File.WriteAllText(prefix + ".txt", "RimUnity 特效性能测试场 / schema 8\n开始 UTC：" + startedUtc +
                 "\n\n" + Summary() + "\n\n测试条件\n" + config + "\n\n实例创建耗时（包含加载、对象构建及激活；不含销毁和随后帧中的粒子预热，二者仍计入整帧）\n" +
                 string.Join("\n", spawnCosts.OrderByDescending(p => p.Value.MaxMs).Select(p =>
                     $"{p.Key} | 次数 {p.Value.Count} | 首次 {p.Value.FirstMs:F3}ms | 平均 {p.Value.TotalMs / p.Value.Count:F3}ms | 最大 {p.Value.MaxMs:F3}ms | 分配 {p.Value.AllocatedBytes}B")) +
-                "\n\n" + CpuText(stages, batchReasons) + "\n\n测量边界\n" + Caveats, encoding);
+                "\n\n" + PopulationText() + "\n\n" + CpuText(stages, batchReasons) + "\n\n测量边界\n" + Caveats, encoding);
             File.WriteAllText(prefix + ".json", JsonSerializer.Serialize(new
             {
-                Schema = 7, StartedUtc = startedUtc, StopReason = stopReason, Configuration = configuration,
+                Schema = 8, StartedUtc = startedUtc, StopReason = stopReason, Configuration = configuration,
+                ParticlePopulation = new { Start = startPopulation, End = endPopulation, Caveats = PopulationCaveats },
                 ParticlePool = new { Start = startPool, End = endPool,
                     PeakPages = samples.Take(count).Max(s => s.ParticlePool.Pages),
                     PeakVertexCapacity = samples.Take(count).Max(s => s.ParticlePool.VertexCapacity),
@@ -89,6 +90,7 @@ internal sealed partial class LabSampler
                 }
             }
             WriteCpuFrames(prefix, encoding);
+            WritePopulationFrames(prefix, encoding);
             lastReport = prefix + ".txt";
             lab.Status = "报告已导出：" + lastReport;
             Log.Message("[RimUnity] " + lab.Status);

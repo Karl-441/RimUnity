@@ -59,7 +59,11 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             int width = 0;
             foreach (var stream in value) width += StreamWidth(stream);
             if (width > 12) throw new NotSupportedException("粒子数值流超过 TEXCOORD0～2 的容量。");
+            var layout = BuildStreamLayout(value);
             streams.Clear(); streams.AddRange(value);
+            particleStreamPlan = layout.Particle; vertexStreamPlan = layout.Vertex;
+            streamPacking = SelectStreamPacking(value.Length, particleStreamPlan, vertexStreamPlan);
+            preparedStreamValues = default; streamValuesPrepared = false;
         }
     }
 
@@ -81,6 +85,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             && (renderMode == ParticleSystemRenderMode.Mesh || maxParticleSize > 0))
         {
             var cameraState = new ParticleCameraState(camera, uiEntry?.Canvas, allowRoll);
+            var drawSpace = new ParticleSystem.DrawSpace(system);
             ClearMesh(); order.Clear();
             for (int i = 0; i < system.count; i++) order.Add(i);
             if (sortMode != ParticleSystemSortMode.None)
@@ -92,7 +97,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
                 try { order.Sort(particleComparison ??= CompareParticles); }
                 finally { sortingSystem = null; }
             }
-            DrawParticleBatches(system, camera, in cameraState);
+            DrawParticleBatches(system, camera, in cameraState, in drawSpace);
         }
         if (system.trails.enabled && trailMaterial != null) DrawTrails(system, camera);
         TrimSpriteBatches();
@@ -110,15 +115,15 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             _ => (s.WorldPosition(y) - sortingPosition).sqrMagnitude.CompareTo((s.WorldPosition(x) - sortingPosition).sqrMagnitude)
         };
     }
-    private void AppendParticle(ParticleSystem s, ParticleSystem.Particle p, in ParticleCameraState cameraState)
+    private void AppendParticle(ParticleSystem s, ParticleSystem.Particle p, in ParticleCameraState cameraState, in ParticleSystem.DrawSpace drawSpace)
     {
         Vector3 center, size; Color32 color; Vector4 c1, c2; Rect rect;
         using (LabCpuMetrics.Measure(LabCpuStage.ParticleAttributes))
         {
             particleRandom = ParticleSystem.Random(p.randomSeed, 97);
-            center = s.WorldPosition(p); size = Vector3.Scale(s.SizeAt(p), s.ParticleScale(p));
+            center = drawSpace.WorldPosition(p); size = Vector3.Scale(s.SizeAt(p), drawSpace.ParticleScale(p));
             color = s.ColorAt(p); c1 = s.CustomAt(p, 0); c2 = s.CustomAt(p, 1);
-            streamParticle = p; streamSize = size; streamVelocity = s.WorldVelocity(p); streamCenter = center;
+            streamParticle = p; streamSize = size; streamVelocity = drawSpace.WorldVelocity(p); streamCenter = center;
             rect = UV(s, p);
             if (ParticleSystem.Random(p.randomSeed, 80) < flip.x) { rect.x += rect.width; rect.width = -rect.width; }
             if (ParticleSystem.Random(p.randomSeed, 81) < flip.y) { rect.y += rect.height; rect.height = -rect.height; }
@@ -129,6 +134,8 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             int offset = vertices.Count;
             Matrix4x4 matrix = Matrix4x4.TRS(center, s.ParticleRotation(p) * Quaternion.Euler(p.rotation3D), size);
             Matrix4x4 normalMatrix = matrix.inverse.transpose;
+            bool flipMesh = ParticleSystem.Random(p.randomSeed, 82) < flip.z;
+            if (sourcePositions.Length != 0 && streamPacking == StreamPacking.General) PrepareParticleStreams(c1, c2);
             for (int i = 0; i < sourcePositions.Length; i++)
             {
                 streamNormal = i < sourceNormals.Length ? normalMatrix.MultiplyVector(sourceNormals[i]).normalized : Vector3.forward;
@@ -137,7 +144,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
                 Vector2 source = i < sourceUV.Length ? sourceUV[i] : Vector2.zero;
                 streamVertexId = i; streamUV3 = i < sourceUV3.Length ? sourceUV3[i] : Vector2.zero; streamUV4 = i < sourceUV4.Length ? sourceUV4[i] : Vector2.zero;
                 Vector3 local = sourcePositions[i] + pivot;
-                if (ParticleSystem.Random(p.randomSeed, 82) < flip.z) local.z = -local.z;
+                if (flipMesh) local.z = -local.z;
                 Vertex(matrix.MultiplyPoint3x4(local), new Vector2(rect.x + source.x * rect.width, rect.y + source.y * rect.height), color, c1, c2);
             }
             foreach (int index in sourceTriangles) indices.Add(offset + index);
@@ -145,10 +152,12 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         }
         BillboardAxes(s, p, in cameraState, center, size, out Vector3 x, out Vector3 y);
         streamNormal = -Vector3.Cross(x, y).normalized;
-        streamTangent = new Vector4(x.normalized.x, x.normalized.y, x.normalized.z, 1);
+        Vector3 tangent = x.normalized;
+        streamTangent = new Vector4(tangent.x, tangent.y, tangent.z, 1);
         center += x * (pivot.x * 2) + y * (pivot.y * 2);
         int start = vertices.Count;
         streamVertexId = 0; streamUV3 = streamUV4 = Vector2.zero;
+        if (streamPacking == StreamPacking.General) PrepareParticleStreams(c1, c2);
         Vertex(center - x - y, new Vector2(rect.xMin, rect.yMin), color, c1, c2);
         streamVertexId = 1;
         Vertex(center - x + y, new Vector2(rect.xMin, rect.yMax), color, c1, c2);
@@ -158,7 +167,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         Vertex(center + x - y, new Vector2(rect.xMax, rect.yMin), color, c1, c2);
         Quad(start);
     }
-    private void ClearMesh() { vertices.Clear(); uv.Clear(); packedUV.Clear(); colors.Clear(); custom1.Clear(); custom2.Clear(); indices.Clear(); normals.Clear(); tangents.Clear(); particleRandom = 0; streamNormal = Vector3.forward; streamTangent = new Vector4(1, 0, 0, 1); }
+    private void ClearMesh() { vertices.Clear(); uv.Clear(); packedUV.Clear(); colors.Clear(); custom1.Clear(); custom2.Clear(); indices.Clear(); normals.Clear(); tangents.Clear(); particleRandom = 0; streamValuesPrepared = false; streamNormal = Vector3.forward; streamTangent = new Vector4(1, 0, 0, 1); }
     private void Vertex(Vector3 p, Vector2 t, Color32 c, Vector4 c1 = default, Vector4 c2 = default)
     {
         vertices.Add(p); uv.Add(t);

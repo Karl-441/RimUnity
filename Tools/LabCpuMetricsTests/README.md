@@ -16,6 +16,11 @@ discard unfinished pages.
 Pool checks additionally cover next-frame reuse, exact vertex/index boundaries,
 130-page burst recovery, the 128 idle-tail threshold, 120-frame retirement,
 idempotent scene clear, allocation-free diagnostics, and distinct report start/peak/end snapshots.
+Population checks use the production scanner to classify global/owned/background
+systems, empty renderers, camera layers and Canvas paths. They cover reparenting,
+duplicate names, bounded identity lists, ownership cleanup, warmed zero allocation,
+schema 8 JSON and the separate 14-column population CSV. Fake scene objects do not
+replace the actual runtime scan check in ParticleDrawSpaceTests.
 The fake host does not validate actual Core mesh packing; that check lives in
 ParticleUploadTests and uses real installed host storage.
 It does not validate actual Shader eligibility, GPU work, game

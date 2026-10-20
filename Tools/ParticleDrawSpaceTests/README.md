@@ -1,0 +1,57 @@
+# Per-draw coordinate snapshot checks
+
+Build the current runtime, then run `Tools/Test-ParticleDrawSpace.ps1` with
+`-GameRoot` and `-HarmonyPath`. Requires .NET 10 and the installed host assemblies.
+The script extracts the frozen pre-optimization DLL from commit
+`a5abd1ee84d32a88981fade591217c245a0a7ea8` without converting binary output to text.
+
+Old and new actual runtime DLLs load in separate assembly contexts sharing the
+same real Core math/Transform implementation. Geometry comparisons cover 675
+combinations of Local/World/Custom simulation, all scaling modes, null/present
+custom transforms, nested rotated/nonuniform/negative/zero scale, per-particle
+event spaces, all five render modes and alignments, two cameras plus no camera,
+roll/3D rotation, flip/pivot, size clamp and explicit/default vertex streams.
+Vertices, indices, normals, tangents, colors, UV and custom outputs must be equal.
+The fixture invokes geometry building without material submission or GPU work;
+it does not test pixel appearance, scripts, collisions or full rendering.
+
+Benchmarks compare the unchanged per-particle coordinate helpers with the actual
+new snapshot helpers, requiring zero warmed managed allocation. A second kernel
+includes snapshot setup for 100 systems of 40 particles. For steady comparisons,
+disable tiered JIT only in the benchmark process (`DOTNET_TieredCompilation=0`).
+These are coordinate-kernel timings, not whole-renderer, game, FPS or GPU gains.
+Transform mutation after a call and a fresh next-call snapshot are also checked.
+
+The same actual-runtime fixture checks schema 8 population scanning against live
+root ownership and a separate background object, requiring zero warmed allocation
+and cleared temporary root references. Fake-host tests separately cover the broader
+classification and export matrix. These tests do not identify objects in the user's
+running game; the next report's boundary inventories are required for that.
+
+
+Optional `-VertexBaseline <path>` compares a separately frozen DLL built immediately
+before the change being measured (it must contain DrawSpace). Preserve its SHA256 with benchmark results; do not regenerate it from the
+optimized sources. This adds every supported individual stream, mixed/duplicate
+layouts, reordered layouts, default and zero-width layouts, nonzero UV3/UV4,
+animated UV2, changing particle age/seed/angular velocity, rejected over-capacity
+layouts, and ClearMesh followed by the unprepared Vertex path used by trails.
+All nine output channels are compared exactly against that DLL.
+
+The optional CPU geometry benchmark builds 4000 particles in 300 renderer chunks
+(100 x 14 + 200 x 13), alternating old/new order for three rounds after warmup.
+It includes ClearMesh, camera state and DrawSpace setup, AppendParticle and stream
+packing; it requires zero warmed allocation. Billboard and three-vertex Mesh use
+default, UV-only, transformed-value and random-value layouts. No Submit, DrawMesh,
+GPU, real scene composition or full-game timing is covered. The baseline retained
+for this round is `Artifacts/verify/vertex-reuse-baseline.dll`, SHA256
+`ED65547E55D5601450C2F9C824BE484807021D0D30A54FAD5CD0D20B3603EF66`.
+
+
+The UV-only fast-path round uses `Artifacts/verify/simple-stream-baseline.dll`,
+SHA256 `DDE48B379D219EED967B92E7FAC75F48BF006146CAD54FD2ADC5CEE0DB008899`.
+It is the deployed runtime from the 073824/074018 reports. The added cold-fire
+layout is Position/Normal/Color/UV, selected by stream semantics, not asset name.
+The suite also compares reordered zero-width attributes, duplicate UV (general
+path), layout replacement, explicit zero channels versus default custom passthrough,
+and the unprepared trail vertex path. Cold-fire layout benchmarks still use the
+fixture's generic module configuration, not the full cold-fire asset or game.

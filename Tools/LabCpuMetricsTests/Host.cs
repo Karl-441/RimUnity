@@ -7,6 +7,44 @@ namespace RimUnity
     internal struct Matrix4x4 { internal static Matrix4x4 identity => default; }
     internal enum IndexFormat { UInt32 }
     internal static class Time { internal static int frameCount; }
+    internal sealed class GameObject
+    {
+        internal int layer;
+        internal string name = "fixture";
+        internal readonly Transform transform;
+        internal GameObject() { transform = new Transform { gameObject = this }; }
+    }
+    internal sealed class Transform
+    {
+        internal Transform parent;
+        internal GameObject gameObject;
+        internal string name => gameObject.name;
+        internal Transform root => parent == null ? this : parent.root;
+    }
+    internal sealed class Canvas { }
+    internal sealed class Camera
+    {
+        internal static readonly HashSet<Camera> Active = new();
+        internal static Camera main;
+        internal bool isActiveAndEnabled = true;
+        internal int cullingMask = -1;
+        internal object targetTexture;
+    }
+    internal sealed class ParticleSystemRenderer { internal bool isActiveAndEnabled = true; }
+    internal sealed class ParticleSystem
+    {
+        internal static readonly HashSet<ParticleSystem> Active = new();
+        internal readonly GameObject gameObject = new();
+        internal Transform transform => gameObject.transform;
+        internal string name => gameObject.name;
+        internal bool isActiveAndEnabled = true, HasCanvas;
+        internal int particleCount;
+        internal ParticleSystemRenderer Renderer;
+        internal int GetInstanceID() => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this);
+        internal T GetComponent<T>() => (T)(object)Renderer;
+        internal T GetComponentInParent<T>() => HasCanvas ? (T)(object)FixtureCanvas : default;
+        private static readonly Canvas FixtureCanvas = new();
+    }
     internal class Material
     {
         internal int passCount = 1;
@@ -119,6 +157,8 @@ namespace RimUnity.Diagnostics
         internal int Concurrency = 20, WarmupSeconds = 10, LiveCount = 20, Spawned = 20, ThrottledFrames;
         internal float Rate = 5, Lifetime = 5, Radius = 8, Scale = 1, RotationX;
         internal readonly List<Effect> Effects = new();
+        internal readonly HashSet<GameObject> OwnedRoots = new();
+        internal void CollectPopulationRoots(HashSet<GameObject> roots) { roots.Clear(); foreach (var root in OwnedRoots) roots.Add(root); }
         internal (int Systems, int Particles) Counts() => LiveCount == 0 ? (0, 0) : (80, 800);
         internal sealed class Effect
         {

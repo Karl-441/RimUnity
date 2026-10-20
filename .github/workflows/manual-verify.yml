@@ -64,6 +64,14 @@ jobs:
         shell: pwsh
         run: ./Tools/Verify.ps1 -SkipBuild -Embedded
 
+      # 渲染诊断测试要宿主程序集（RimWorld.dll、Waylith.dll 在游戏根目录）和 Harmony，
+      # 参数顺序是 <RimUnity.dll> <游戏目录> <0Harmony.dll>，所以只能放第二层。
+      - name: 渲染诊断测试（需要游戏）
+        shell: pwsh
+        run: |
+          dotnet run --project Tools/RenderDiagnosticsTests -c Release -- `
+            1.7/Assemblies/RimUnity.dll $env:RIMWORLD_DIR $env:HARMONY_PATH
+
       # 第三层：真实启动游戏两次，验证程序集加载顺序、Def 归属与缓存提取。
       # 夹具路径由上一步 Verify-Embedded.ps1 写到 artifacts/verify/embedded-fixtures.txt。
       - name: 游戏内验证（可选）
