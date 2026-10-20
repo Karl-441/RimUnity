@@ -16,6 +16,9 @@ The benchmark alternates three runs of 60 separate dynamic meshes and one shared
 dynamic mesh containing 60 ordered submeshes: both have 800 quads, the same layout,
 and 60 draw ranges. After 30 warm frames it measures 100 frames. CPU storage setup,
 GPU resource retirement and frame setup are outside the upload/resolve timings.
+Production mesh memory diagnostics are checked against native storage lengths and
+managed payload capacities; warmed reads must allocate zero bytes and leave the
+mesh upload version unchanged. These figures exclude GPU memory and allocator overhead.
 This does not time GPU execution or render pixels, nor prove all in-game overhead
 belongs to these methods. Game visual checks must still cover transparent order,
 HDR/Bloom layers, bounds, multipass/property-block fallback and offscreen cameras.

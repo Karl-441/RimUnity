@@ -20,6 +20,8 @@ namespace RimUnity
         internal string name;
         internal IndexFormat indexFormat;
         internal int vertexCount;
+        internal int VertexCapacity;
+        internal bool Destroyed;
         internal readonly List<int> Indices = new();
         internal readonly List<List<int>> Submeshes = new();
         internal static bool FailAppend;
@@ -32,6 +34,12 @@ namespace RimUnity
             while (Submeshes.Count <= submesh) Submeshes.Add(new());
             foreach (int index in indices) { Indices.Add(index + vertexCount); Submeshes[submesh].Add(index + vertexCount); }
             vertexCount += vertices.Count;
+            VertexCapacity = Math.Max(VertexCapacity, vertexCount);
+        }
+        internal (long Vertices, long Indices, long ManagedBytes, long NativeCpuBytes) ParticleBufferUsage()
+        {
+            long indices = 0; foreach (var list in Submeshes) indices += list.Capacity;
+            return (VertexCapacity, indices, VertexCapacity * 92L + indices * 4, 0);
         }
     }
     internal static class Graphics
@@ -42,8 +50,8 @@ namespace RimUnity
     }
     internal static class Object
     {
-        internal static void Destroy(object item) { }
-        internal static void DestroyImmediate(object item) { }
+        internal static void Destroy(object item) { if (item is Mesh mesh) mesh.Destroyed = true; }
+        internal static void DestroyImmediate(object item) => Destroy(item);
     }
 }
 namespace RimUnity.Rendering

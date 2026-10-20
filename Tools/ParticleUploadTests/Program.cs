@@ -106,6 +106,20 @@ internal static class Program
                 page.AppendParticleGeometry(positions, normals, tangents, colors, uv, uv, uv, ix, s);
             }
             var native = page.EngineMesh.CpuStorage;
+            var readUsage = typeof(RimUnity.Mesh).GetMethod("ParticleBufferUsage", BindingFlags.Instance | BindingFlags.NonPublic)
+                .CreateDelegate<Func<(long Vertices, long Indices, long ManagedBytes, long NativeCpuBytes)>>(page);
+            var usage = readUsage();
+            long expectedNative = native.GetIndexBuffer().LengthBytes;
+            for (int i = 0; i < native.Layout.StreamCount; i++) expectedNative += native.GetVertexStream(i).LengthBytes;
+            if (usage.Vertices < page.vertexCount || usage.Indices < 18 || usage.ManagedBytes < page.vertexCount * 92
+                || usage.NativeCpuBytes != expectedNative) throw new Exception("Particle buffer diagnostics mismatch");
+            long version = page.EngineMesh.Version;
+            for (int i = 0; i < 100; i++) _ = readUsage();
+            long probeBytes = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 10000; i++) _ = readUsage();
+            if (GC.GetAllocatedBytesForCurrentThread() != probeBytes || page.EngineMesh.Version != version)
+                throw new Exception("Pool diagnostics allocated or changed mesh upload state");
+            Console.WriteLine("PASS production mesh memory counters: logical native bytes, managed capacity, zero allocation and no upload-state mutation.");
             int vertexOffset = 0;
             for (int s = 0; s < 3; s++)
             {

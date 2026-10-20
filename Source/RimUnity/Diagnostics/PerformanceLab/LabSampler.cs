@@ -20,6 +20,7 @@ internal sealed partial class LabSampler : IDisposable
     private int count, previous0, previous1, previous2, submitted;
     private long origin, previous, allocated, memoryTime, workingSet, privateBytes, managedBytes;
     private long startWorkingSet, startPrivateBytes;
+    private ParticleDrawBatch.PoolUsage startPool, endPool;
     private bool endMemoryCaptured;
     private string endMemoryError;
     private int duration;
@@ -38,7 +39,8 @@ internal sealed partial class LabSampler : IDisposable
         int Gen0, int Gen1, int Gen2, int Instances, int Systems, int Particles, int SubmittedItems,
         long ManagedBytes, long WorkingSetBytes, long PrivateBytes, int Spawned, int ThrottledFrames, bool DetailedProbes,
         int ParticleDrawsBeforeBatch, int ParticleDrawsAfterBatch,
-        long MainThreadAllocatedBytes, double ObserverCpuMs, long ObserverAllocatedBytes, int ParticleUploadPages);
+        long MainThreadAllocatedBytes, double ObserverCpuMs, long ObserverAllocatedBytes, int ParticleUploadPages,
+        ParticleDrawBatch.PoolUsage ParticlePool);
 
     //实例化阶段单独按资源汇总，预热和逐帧模拟耗时由详细探针报告定位。
     internal sealed class SpawnCost
@@ -87,6 +89,7 @@ internal sealed partial class LabSampler : IDisposable
         spawnStart = lab.Spawned; throttledStart = lab.ThrottledFrames;
         process = Process.GetCurrentProcess(); ReadMemory();
         startWorkingSet = workingSet; startPrivateBytes = privateBytes;
+        startPool = endPool = ParticleDrawBatch.ReadPoolUsage();
         endMemoryCaptured = false; endMemoryError = null;
         cpu?.Start();
         allocated = GC.GetTotalAllocatedBytes(false);
@@ -134,7 +137,7 @@ internal sealed partial class LabSampler : IDisposable
                 submitted, managedBytes, workingSet, privateBytes, lab.Spawned - spawnStart,
                 lab.ThrottledFrames - throttledStart, ParticleSpikeCapture.LabCaptureActive,
                 ParticleDrawBatch.Before, ParticleDrawBatch.After,
-                Math.Max(0, mainTotal - mainAllocated), 0, 0, ParticleDrawBatch.UploadPages);
+                Math.Max(0, mainTotal - mainAllocated), 0, 0, ParticleDrawBatch.UploadPages, ParticleDrawBatch.ReadPoolUsage());
             count++;
             previous = now; allocated = total; mainAllocated = mainTotal; previous0 = g0; previous1 = g1; previous2 = g2;
             if (refresh)
@@ -168,6 +171,7 @@ internal sealed partial class LabSampler : IDisposable
         ParticleDrawBatch.Sampling = false;
         application.FrameEnqueued -= Frame;
         application.PrePollEvents -= PrePoll; application = null;
+        endPool = ParticleDrawBatch.ReadPoolUsage();
         // Potentially slow OS queries run only after timing and event collection stop.
         try { ReadMemory(); endMemoryCaptured = true; }
         catch (Exception ex) { endMemoryError = ex.GetType().Name + ": " + ex.Message; }

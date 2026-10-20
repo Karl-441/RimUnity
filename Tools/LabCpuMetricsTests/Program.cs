@@ -12,7 +12,7 @@ internal static class Program
     { if (!valid) throw new Exception(message); checks++; }
     private static void Main()
     {
-        Nesting(); Lifecycle(); Windows(); Batch(); Pages(); ObserverCost(); Reports();
+        Nesting(); Lifecycle(); Windows(); Batch(); Pages(); PoolLifecycle(); ObserverCost(); Reports();
         Console.WriteLine($"PASS {checks} CPU capture/batch checks (production collector and batch code; fake mesh/host, no GPU).");
     }
     private static void Nesting()
@@ -144,6 +144,60 @@ internal static class Program
         Check(Graphics.Draws.Count == 1 && Graphics.Draws[0].Submesh == 0, "aborted range references do not leak into the next page");
         ParticleDrawBatch.Clear(); ParticleDrawBatch.Sampling = false;
     }
+    private static void PoolLifecycle()
+    {
+        ParticleDrawBatch.Clear(); Graphics.Draws.Clear(); Time.frameCount++;
+        var a = new Material(); ParticleDrawBatch.Sampling = true;
+        ParticleDrawBatch.Begin(); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        var original = Graphics.Draws[0].Mesh;
+        Time.frameCount++;
+        Check(ParticleDrawBatch.ReadPoolUsage().UsedThisFrame == 0, "unused new frame reports no stale leases");
+        ParticleDrawBatch.Begin(); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        Check(ReferenceEquals(original, Graphics.Draws[^1].Mesh) && original.vertexCount == 3,
+            "next frame reuses cleared page without accumulating old geometry");
+        Check(ParticleDrawBatch.ReadPoolUsage().Pages == 1, "stable frame reuses one page");
+        for (int i = 0; i < 10000; i++) _ = ParticleDrawBatch.ReadPoolUsage();
+        long bytes = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 10000; i++) _ = ParticleDrawBatch.ReadPoolUsage();
+        long poolBytes = GC.GetAllocatedBytesForCurrentThread() - bytes;
+        Check(poolBytes == 0, "pool diagnostics allocate zero bytes after warmup: " + poolBytes);
+        ParticleDrawBatch.Clear(); Graphics.Draws.Clear(); Time.frameCount++;
+        var fullVertices = Enumerable.Repeat(default(Vector3), ParticleDrawBatch.VertexLimit).ToList();
+        ParticleDrawBatch.Begin(); Append(a, vertices: fullVertices); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        Check(Graphics.Draws.Count == 2 && !ReferenceEquals(Graphics.Draws[0].Mesh, Graphics.Draws[1].Mesh)
+            && Graphics.Draws[0].Mesh.vertexCount == ParticleDrawBatch.VertexLimit,
+            "exact vertex boundary splits before overflow without overwriting published page");
+        ParticleDrawBatch.Clear(); Graphics.Draws.Clear(); Time.frameCount++;
+        var fullIndices = Enumerable.Repeat(0, ParticleDrawBatch.IndexLimit).ToList();
+        ParticleDrawBatch.Begin(); Append(a, ix: fullIndices); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        Check(Graphics.Draws.Count == 2 && Graphics.Draws[0].Indices.Length == ParticleDrawBatch.IndexLimit,
+            "exact index boundary splits before overflow and preserves complete range");
+        ParticleDrawBatch.Clear(); Graphics.Draws.Clear(); Time.frameCount++;
+        for (int i = 0; i < 130; i++)
+        { ParticleDrawBatch.Begin(); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End(); }
+        var burst = Graphics.Draws.Select(d => d.Mesh).ToArray();
+        var peak = ParticleDrawBatch.ReadPoolUsage();
+        Check(peak.Pages == 130 && peak.UsedThisFrame == 130 && peak.IdlePages == 0,
+            "same-frame burst reports all camera/page leases");
+        Check(peak.VertexCapacity >= 390 && peak.ManagedBufferBytes > 0, "retained pool capacities include burst pages");
+        Time.frameCount++; ParticleDrawBatch.Begin(); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        Check(ParticleDrawBatch.ReadPoolUsage().Pages == 130 && !burst.Any(m => m.Destroyed),
+            "previous-frame pages survive immediate burst recovery");
+        Time.frameCount++; ParticleDrawBatch.Begin(); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        var reduced = ParticleDrawBatch.ReadPoolUsage();
+        Check(reduced.Pages == 128 && reduced.IdlePages == 127 && burst.Count(m => m.Destroyed) == 2,
+            "excess idle tail retires after one intervening frame");
+        Time.frameCount += 120; ParticleDrawBatch.Begin();
+        Check(ParticleDrawBatch.ReadPoolUsage().Pages == 0 && burst.All(m => m.Destroyed),
+            "all pages idle for 120 frames release their meshes");
+        ParticleDrawBatch.End();
+        ParticleDrawBatch.Begin(); Append(a); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
+        var final = Graphics.Draws[^1].Mesh;
+        ParticleDrawBatch.Clear(); ParticleDrawBatch.Clear();
+        Check(final.Destroyed && ParticleDrawBatch.ReadPoolUsage() == default,
+            "scene clear is idempotent and drops all pool memory references and counters");
+        ParticleDrawBatch.Sampling = false; Graphics.Draws.Clear();
+    }
     private static void ObserverCost()
     {
         const int iterations = 100000;
@@ -165,28 +219,42 @@ internal static class Program
     {
         var lab = new PerformanceLab();
         using var sampler = new LabSampler(lab);
+        Time.frameCount++; ParticleDrawBatch.Begin(); Append(new Material()); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
         sampler.Start(60);
         Check(sampler.Sampling && Waylith.EngineApplication.Instance.Subscribers == 1, "sampler subscribes once");
         for (int i = 0; i < 2; i++)
         {
+            if (i == 1)
+            {
+                Time.frameCount++;
+                for (int page = 0; page < 2; page++)
+                { ParticleDrawBatch.Begin(); Append(new Material()); ParticleDrawBatch.Flush(); ParticleDrawBatch.End(); }
+            }
             Waylith.EngineApplication.Instance.Poll();
             using (LabCpuMetrics.BridgeWindow())
                 using (LabCpuMetrics.Measure(LabCpuStage.BridgeUpdate)) { keep = new byte[256]; }
             LabCpuMetrics.Batch(LabBatchReason.MaterialChanged);
             Waylith.EngineApplication.Instance.Emit();
         }
-        sampler.Stop("fixture", export: true);
+        ParticleDrawBatch.Clear(); sampler.Stop("fixture", export: true);
         Check(!sampler.Sampling && Waylith.EngineApplication.Instance.Subscribers == 0 && Waylith.EngineApplication.Instance.PrePollSubscribers == 0 && !ParticleDrawBatch.Sampling, "stop unsubscribes all sampler state");
         string prefix = Path.ChangeExtension(sampler.LastReport, null);
         using var json = JsonDocument.Parse(File.ReadAllText(prefix + ".json"));
         var root = json.RootElement;
-        Check(root.GetProperty("Schema").GetInt32() == 6 && root.GetProperty("Cpu").GetProperty("Frames").GetInt32() == 2, "schema and frame count exported");
+        Check(root.GetProperty("Schema").GetInt32() == 7 && root.GetProperty("Cpu").GetProperty("Frames").GetInt32() == 2, "schema and frame count exported");
+        Check(root.GetProperty("ParticlePool").GetProperty("Start").GetProperty("Pages").GetInt32() == 1
+            && root.GetProperty("ParticlePool").GetProperty("End").GetProperty("Pages").GetInt32() == 0
+            && root.GetProperty("ParticlePool").GetProperty("PeakPages").GetInt32() == 2
+            && root.GetProperty("Frames")[0].GetProperty("ParticlePool").GetProperty("ManagedBufferBytes").GetInt64() > 0,
+            "pool start, sampled peak and cleared endpoint remain distinct in report");
         Check(root.GetProperty("Cpu").GetProperty("Enabled").GetBoolean() && !root.GetProperty("Configuration").GetProperty("RuntimeIsStandalone").GetBoolean(), "source/measurement metadata exported");
         var bridge = root.GetProperty("Cpu").GetProperty("Stages")[0];
         Check(bridge.GetProperty("Calls").GetInt64() == 2 && bridge.GetProperty("SelfBytesPerFrame").GetDouble() >= 256, "real sampler exports phase calls/allocations");
         var rows = File.ReadAllLines(prefix + ".frames.csv");
-        Check(rows.Length == 3 && rows.All(row => row.Split(',').Length == 23), "frame CSV headers/rows align including observer/page columns");
-        Check(File.ReadAllLines(prefix + ".stages.csv").Length == 3 && File.ReadAllLines(prefix + ".batch.csv").Length == 3, "stage/batch CSV frame rows exported");
+        Check(rows.Length == 3 && rows.All(row => row.Split(',').Length == 30), "frame CSV headers/rows align including pool capacities");
+        Check(File.ReadAllLines(prefix + ".stages.csv").Count(row => row.Contains(",BridgeUpdate,")) == 2
+            && File.ReadAllLines(prefix + ".batch.csv").Count(row => row.Contains(",MaterialChanged,")) == 2,
+            "stage/batch CSV frame rows exported alongside pool activity");
         Check(root.GetProperty("Frames")[0].GetProperty("ObserverAllocatedBytes").GetInt64() >= 0, "observer counters serialized");
         Check(root.GetProperty("ProcessMemory").GetProperty("EndCaptured").GetBoolean(), "separate end memory query recorded");
         Check(root.GetProperty("Cpu").GetProperty("FrameWindows")[0].GetProperty("CompleteFrames").GetInt32() == 1, "complete windows exported");

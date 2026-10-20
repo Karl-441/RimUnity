@@ -33,6 +33,24 @@ internal static class ParticleDrawBatch
     internal static int Before => frame == Time.frameCount ? Inputs + IndependentDraws : 0;
     internal static int After => frame == Time.frameCount ? Outputs + IndependentDraws : 0;
 
+    internal readonly record struct PoolUsage(int Pages, int UsedThisFrame, int IdlePages,
+        long VertexCapacity, long IndexCapacity, long ManagedBufferBytes, long NativeCpuBytes);
+
+    // Explicit lab sampling only; no per-frame work when the sampler is closed.
+    // Includes all cameras. GPU allocations/retirement are owned by the host, not counted here.
+    internal static PoolUsage ReadPoolUsage()
+    {
+        long vertices = 0, indices = 0, managed = 0, native = 0;
+        foreach (var slot in slots)
+        {
+            var usage = slot.Mesh.ParticleBufferUsage();
+            vertices += usage.Vertices; indices += usage.Indices;
+            managed += usage.ManagedBytes; native += usage.NativeCpuBytes;
+        }
+        int used = frame == Time.frameCount ? cursor : 0;
+        return new(slots.Count, used, slots.Count - used, vertices, indices, managed, native);
+    }
+
     //多相机共享帧内游标，避免后一个相机覆盖前一个相机尚未冻结的网格。
     internal static void Begin()
     {
