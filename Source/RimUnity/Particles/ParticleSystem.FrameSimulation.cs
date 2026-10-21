@@ -32,7 +32,7 @@ public sealed partial class ParticleSystem
                 PrewarmSystems(orderedSystems);
                 foreach (ParticleSystem system in orderedSystems)
                 {
-                    float dt = system.clock.Step(system.main.useUnscaledTime);
+                    float dt = system.clock.Step(system.main.useUnscaledTime, followGameSpeed: false);
                     system.PrepareSimulationTime(system.paused ? 0 : dt * system.main.simulationSpeed);
                 }
             }
