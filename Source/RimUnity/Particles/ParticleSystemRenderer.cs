@@ -132,7 +132,9 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         {
             SelectMesh(p);
             int offset = vertices.Count;
-            Matrix4x4 matrix = Matrix4x4.TRS(center, s.ParticleRotation(p) * Quaternion.Euler(p.rotation3D), size);
+            // Shape-aligned particles already carry their emission orientation; other meshes obey Renderer alignment.
+            Quaternion orientation = p.alignedToDirection ? s.ParticleRotation(p) : BillboardAlignment(s, p, in cameraState, center);
+            Matrix4x4 matrix = Matrix4x4.TRS(center, orientation * Quaternion.Euler(p.rotation3D), size);
             Matrix4x4 normalMatrix = matrix.inverse.transpose;
             bool flipMesh = ParticleSystem.Random(p.randomSeed, 82) < flip.z;
             if (sourcePositions.Length != 0 && streamPacking == StreamPacking.General) PrepareParticleStreams(c1, c2);

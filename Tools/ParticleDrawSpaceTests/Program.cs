@@ -16,7 +16,7 @@ internal static class Program
     {
         runtime = Path.GetFullPath(args[0]); game = Path.GetFullPath(args[1]); harmony = Path.GetFullPath(args[2]);
         AssemblyLoadContext.Default.Resolving += (_, name) => Resolve(name);
-        try { Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
+        try { if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static Assembly Resolve(AssemblyName name)
@@ -27,6 +27,14 @@ internal static class Program
             if (File.Exists(path)) return AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
         }
         return name.Name == "0Harmony" ? AssemblyLoadContext.Default.LoadFromAssemblyPath(harmony) : null;
+    }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void CheckMeshAlignment()
+    {
+        RimUnity.Runtime.NativeRuntime.InitializeOnCurrentThread();
+        using var rig = new Rig(typeof(ParticleSystem).Assembly);
+        rig.CheckMeshAlignment();
+        Console.WriteLine("PASS mesh alignment: View, World, Local, Facing, Velocity and shape orientation; actual triangle vertices under a top-down camera.");
     }
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static void Run(string baseline, string vertexBaseline)
@@ -42,7 +50,8 @@ internal static class Program
         int scenario = 0;
         foreach (string simulation in new[] { "Local", "World", "Custom" })
         foreach (string scaling in new[] { "Hierarchy", "Local", "Shape" })
-        foreach (string mode in new[] { "Billboard", "Stretch", "HorizontalBillboard", "VerticalBillboard", "Mesh" })
+        // The frozen DLL ignored Mesh alignment; that corrected behavior has its own geometry assertions.
+        foreach (string mode in new[] { "Billboard", "Stretch", "HorizontalBillboard", "VerticalBillboard" })
         foreach (string alignment in new[] { "View", "World", "Local", "Facing", "Velocity" })
         for (int camera = 0; camera < 3; camera++)
         {
@@ -57,6 +66,7 @@ internal static class Program
             scenario++;
         }
         Console.WriteLine($"PASS {scenario} old-DLL versus new-DLL geometry scenarios, {scenario * 9} exact channel comparisons (vertices/indices/normals/tangents/colors/UV/custom streams). No GPU/pixel rendering.");
+        using (var meshRig = new Rig(typeof(ParticleSystem).Assembly)) meshRig.CheckMeshAlignment();
         if (vertexBaseline != null) CheckVertexReuse(vertexBaseline, current);
         Benchmark(current);
         CheckPopulation(current);
@@ -80,7 +90,8 @@ internal static class Program
             catch (TargetInvocationException ex) when (ex.InnerException is NotSupportedException) { }
         }
         int cases = 0;
-        foreach (string mode in new[] { "Billboard", "Mesh" })
+        // Mesh orientation intentionally differs from this frozen baseline.
+        foreach (string mode in new[] { "Billboard" })
         foreach (var layout in layouts)
         {
             old.Configure("Local", "Hierarchy", mode, "View", 1, cases);
@@ -267,6 +278,43 @@ internal static class Program
             CameraOwner.transform.localRotation = Quaternion.Euler(30, 15, 7); Set(Camera, "orthographic", camera == 2);
             // Explicit streams exercise values that consume the transformed position/size/velocity.
             Streams(scenario % 2 == 0 ? new[] { "UV", "Velocity", "Center", "SizeXYZ", "Speed" } : Array.Empty<string>());
+        }
+        internal void CheckMeshAlignment()
+        {
+            CameraOwner.transform.rotation = Quaternion.Euler(90, 0, 0);
+            CameraOwner.transform.position = new Vector3(0, 10, 0);
+            Owner.transform.rotation = Quaternion.Euler(0, 35, 0);
+            SetEnum(main, "simulationSpace", "World");
+            SetEnum(Renderer, "renderMode", "Mesh");
+            object p = Activator.CreateInstance(particle);
+            Set(p, "startSize3D", Vector3.one); Set(p, "startLifetime", 1f);
+            Set(p, "remainingLifetime", 1f); Set(p, "startColor", new Color32(255, 255, 255, 255));
+            Set(p, "velocity", new Vector3(1, -1, 0));
+            foreach (string mode in new[] { "View", "World", "Local", "Facing", "Velocity" })
+            {
+                SetEnum(Renderer, "alignment", mode);
+                renderer.GetMethod("ClearMesh", Flags).Invoke(Renderer, null);
+                object cam = Activator.CreateInstance(cameraState, Flags, null, new object[] { Camera, null, true }, null);
+                object space = Activator.CreateInstance(drawSpace, Flags, null, new[] { System }, null);
+                renderer.GetMethod("AppendParticle", Flags).Invoke(Renderer, new[] { System, p, cam, space });
+                var points = ((IEnumerable)Get(Renderer, "vertices")).Cast<Vector3>().ToArray();
+                Vector3 normal = Vector3.Cross(points[1] - points[0], points[2] - points[0]).normalized;
+                Vector3 expected = mode switch {
+                    "View" or "Facing" => Vector3.down,
+                    "Local" => Owner.transform.rotation * Vector3.forward,
+                    "Velocity" => new Vector3(1, -1, 0).normalized,
+                    _ => Vector3.forward };
+                Check(Vector3.Dot(normal, expected) > .999f, "mesh normal follows " + mode);
+            }
+            Set(p, "alignedToDirection", true);
+            SetEnum(Renderer, "alignment", "View");
+            renderer.GetMethod("ClearMesh", Flags).Invoke(Renderer, null);
+            object alignedCam = Activator.CreateInstance(cameraState, Flags, null, new object[] { Camera, null, true }, null);
+            object alignedSpace = Activator.CreateInstance(drawSpace, Flags, null, new[] { System }, null);
+            renderer.GetMethod("AppendParticle", Flags).Invoke(Renderer, new[] { System, p, alignedCam, alignedSpace });
+            var alignedPoints = ((IEnumerable)Get(Renderer, "vertices")).Cast<Vector3>().ToArray();
+            Check(Vector3.Dot(Vector3.Cross(alignedPoints[1] - alignedPoints[0], alignedPoints[2] - alignedPoints[0]).normalized, Vector3.forward) > .999f,
+                "shape-aligned mesh retains emission orientation");
         }
         internal void Streams(params string[] names)
         {
