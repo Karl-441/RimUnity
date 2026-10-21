@@ -54,7 +54,8 @@ public sealed partial class ParticleSystem
     private void PrepareCollisionCandidates()
     {
         collisionCandidates.Clear();
-        if (count == 0 || !collision.enabled || collision.type == ParticleSystemCollisionType.Planes) return;
+        //This step may spawn its first particles after candidate preparation.
+        if (!collision.enabled || collision.type == ParticleSystemCollisionType.Planes) return;
         foreach (Collider collider in ParticlePhysicsWorld.colliders)
         {
             if (collider == null || !collider.enabled || !collider.gameObject.activeInHierarchy || collider.isTrigger

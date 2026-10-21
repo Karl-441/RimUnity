@@ -16,7 +16,7 @@ internal static class Program
     {
         runtime = Path.GetFullPath(args[0]); game = Path.GetFullPath(args[1]); harmony = Path.GetFullPath(args[2]);
         AssemblyLoadContext.Default.Resolving += (_, name) => Resolve(name);
-        try { if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
+        try { if (args[3] == "--particle-physics-timeline") ParticlePhysicsTimelineChecks.Run(); else if (args[3] == "--particle-turnover") ParticleTurnoverChecks.Run(); else if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static Assembly Resolve(AssemblyName name)

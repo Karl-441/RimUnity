@@ -39,7 +39,11 @@ public sealed partial class ParticleSystem
     private void CaptureParentMotion(Particle particle, Vector3 from, float aliveTime)
     {
         if (subEmissionEvents.Count != 0)
+        {
+            if (subParentMotions.TryGetValue(particle.identity, out var previous))
+            { from = previous.From; aliveTime += previous.AliveTime; }
             subParentMotions[particle.identity] = new ParentMotion(particle, from, WorldPosition(particle), aliveTime);
+        }
     }
 
     //Birth 跟随父粒子存活区间，Death 独立执行一次子系统时长。

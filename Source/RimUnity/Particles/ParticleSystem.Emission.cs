@@ -25,6 +25,8 @@ public sealed partial class ParticleSystem
         float before = elapsed - delay;
         elapsed += dt;
         float now = elapsed - delay;
+        PrepareCollisionCandidates();
+        scheduledEmissions.Clear();
         if (emitting && emission.enabled && now >= 0)
         {
             float from = Math.Max(0, before), to = main.loop ? now : Math.Min(now, main.duration);
@@ -33,9 +35,9 @@ public sealed partial class ParticleSystem
                 float normalized = Mathf.Repeat(to, main.duration) / main.duration;
                 float start = Mathf.Clamp01((from - before) / dt), end = Mathf.Clamp01((to - before) / dt);
                 float rate = Math.Max(0, emission.rateOverTime.Evaluate(normalized, Random(randomSeed, 2)));
-                EmitContinuous(ref carry, rate * (to - from), from, to, start, end, emitterFrom, emitterTo, dt);
+                ScheduleContinuous(ref carry, rate * (to - from), from, to, start, end);
                 float distanceRate = Math.Max(0, emission.rateOverDistance.Evaluate(normalized, Random(randomSeed, 3)));
-                EmitContinuous(ref distanceCarry, distanceRate * Vector3.Distance(emitterFrom, emitterTo) * (end - start), from, to, start, end, emitterFrom, emitterTo, dt);
+                ScheduleContinuous(ref distanceCarry, distanceRate * Vector3.Distance(emitterFrom, emitterTo) * (end - start), from, to, start, end);
                 int first = (int)(from / main.duration), last = main.loop ? (int)(to / main.duration) : 0;
                 for (int loop = first; loop <= last; loop++) foreach (Burst burst in emission.bursts)
                     for (int cycle = 0; cycle < BurstCycles(burst); cycle++)
@@ -47,8 +49,8 @@ public sealed partial class ParticleSystem
                             float phase = (at - loop * main.duration) / main.duration;
                             float offset = Mathf.Clamp01((at - before) / dt);
                             int amount = Math.Max(0, Mathf.RoundToInt(burst.count.Evaluate(phase, Random01())));
-                            for (int n = 0; n < amount && CanEmitParticle; n++)
-                                Spawn(default, Vector3.Lerp(emitterFrom, emitterTo, offset), phase, offset * dt, at, n, amount);
+                            if (amount > 0) scheduledEmissions.Add(new ScheduledEmission
+                            { from = at, to = at, start = offset, end = offset, phase = phase, count = amount, burst = true });
                         }
                     }
             }
@@ -56,13 +58,27 @@ public sealed partial class ParticleSystem
         //duration 与 emission 开关无关，禁用发射模块也必须结束非循环系统。
         if (emitting && !main.loop && now >= main.duration) emitting = false;
         previousPosition = emitterTo;
-        PrepareCollisionCandidates();
+        EmitScheduled(dt, emitterFrom, emitterTo);
+        collisionCandidates.Clear();
+        AdvanceSubEmissions(dt);
+        if (!emitting && count == 0 && trailStates.Count == 0 && subEmissionEvents.Count == 0 && !completed)
+        {
+            completed = true; playing = false;
+            if (main.stopAction == ParticleSystemStopAction.Disable) gameObject.SetActive(false);
+            else if (main.stopAction == ParticleSystemStopAction.Destroy) Destroy(gameObject);
+            else if (main.stopAction == ParticleSystemStopAction.Callback) ParticleMessages.Send(gameObject, "OnParticleSystemStopped");
+        }
+    }
+
+    private void AdvanceParticles(float to, float from)
+    {
         for (int i = count - 1; i >= 0; i--)
         {
             ref Particle p = ref particles[i];
-            float birthOffset = p.birthOffset;
+            if (p.birthOffset > to) continue;
+            float birthOffset = Mathf.Max(from, p.birthOffset);
             Vector3 fromPosition = WorldPosition(p);
-            float particleDt = Mathf.Max(0, dt - birthOffset); p.birthOffset = 0;
+            float particleDt = Mathf.Max(0, to - birthOffset); p.birthOffset = to;
             bool ring = main.ringBufferMode != ParticleSystemRingBufferMode.Disabled && p.remainingLifetime >= 0;
             float aliveDt = Mathf.Min(particleDt, Mathf.Max(0, p.remainingLifetime));
             if (ring && main.ringBufferMode == ParticleSystemRingBufferMode.LoopUntilReplaced) aliveDt = particleDt;
@@ -79,15 +95,6 @@ public sealed partial class ParticleSystem
                 particles[i] = particles[--count]; particles[count] = default; continue;
             }
         }
-        collisionCandidates.Clear();
-        AdvanceSubEmissions(dt);
-        if (!emitting && count == 0 && trailStates.Count == 0 && subEmissionEvents.Count == 0 && !completed)
-        {
-            completed = true; playing = false;
-            if (main.stopAction == ParticleSystemStopAction.Disable) gameObject.SetActive(false);
-            else if (main.stopAction == ParticleSystemStopAction.Destroy) Destroy(gameObject);
-            else if (main.stopAction == ParticleSystemStopAction.Callback) ParticleMessages.Send(gameObject, "OnParticleSystemStopped");
-        }
     }
 
     //零循环次数表示在系统时长内重复；非法间隔不能产生无界循环。
@@ -102,19 +109,14 @@ public sealed partial class ParticleSystem
     }
 
     //分别累计时间与距离余量，在跨过每个整数阈值的位置出生。
-    private void EmitContinuous(ref float remainder, float amount, float from, float to, float start, float end, Vector3 emitterFrom, Vector3 emitterTo, float dt)
+    private void ScheduleContinuous(ref float remainder, float amount, float from, float to, float start, float end)
     {
         if (!float.IsFinite(amount)) throw new InvalidOperationException("发射速率必须生成有限粒子数量。");
         float old = remainder, total = old + amount;
         int number = (int)Math.Min(int.MaxValue, Math.Floor(total));
         remainder = total - (float)Math.Floor(total);
-        for (int i = 0; i < number && CanEmitParticle; i++)
-        {
-            float fraction = (i + 1 - old) / amount;
-            float at = Mathf.Lerp(start, end, fraction);
-            float phase = Mathf.Repeat(Mathf.Lerp(from, to, fraction), main.duration) / main.duration;
-            Spawn(default, Vector3.Lerp(emitterFrom, emitterTo, at), phase, at * dt, Mathf.Lerp(from, to, fraction), i, number);
-        }
+        if (number > 0) scheduledEmissions.Add(new ScheduledEmission
+        { from = from, to = to, start = start, end = end, amount = amount, remainder = old, count = number });
     }
 
     //出生属性的不同随机通道互不影响。
