@@ -8,6 +8,7 @@ public sealed partial class ParticleSystem
 {
     private static int simulatedFrame = -1;
     private static bool coordinatedStep;
+    private const float SimulationStepSeconds = 1f / 60f;
     private static readonly List<ParticleSystem> frameSystems = new(), orderedSystems = new();
     private static readonly Dictionary<ParticleSystem, int> visitState = new();
     private float frameDelta, currentStepDelta;
@@ -51,7 +52,9 @@ public sealed partial class ParticleSystem
         if (coordinatedStep) throw new InvalidOperationException("粒子正在推进，不能在同一步内再次调用 Simulate 或预热。");
         float maximum = 0;
         foreach (ParticleSystem system in systems) maximum = Math.Max(maximum, system.frameDelta);
-        int steps = fixedTimeStep ? Math.Max(1, checked((int)Math.Ceiling(maximum * 60d))) : 1;
+        //Use the same representable float step as callers; multiplying a float
+        //1/60 by double 60 rounds above one and needlessly schedules two steps.
+        int steps = fixedTimeStep ? Math.Max(1, checked((int)Math.Ceiling(maximum / (double)SimulationStepSeconds))) : 1;
         coordinatedStep = true;
         try
         {

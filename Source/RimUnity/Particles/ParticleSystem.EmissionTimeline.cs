@@ -7,7 +7,7 @@ public sealed partial class ParticleSystem
 {
     //Capacity freed by collision/trigger is reconsidered at most one normal physics
     //substep later. Rejected continuous attempts must not set physics frequency.
-    private const float CapacityPhysicsStep = 1f / 60f;
+    private const float CapacityPhysicsStep = SimulationStepSeconds;
     //Instance-owned scratch, cleared per Step. A continuous source occupies one entry,
     //regardless of its particle rate; no per-particle scheduling allocations.
     private readonly List<ScheduledEmission> scheduledEmissions = new();
@@ -84,7 +84,16 @@ public sealed partial class ParticleSystem
                 //Only flush deferred integration when a capacity decision requires it.
                 //Never reclaim a death later than the current emission timestamp.
                 if (count >= main.maxParticles && (at > advanced || !CanEmitParticle))
-                { AdvanceParticles(at, advanced); advanced = at; capacityUntil = null; }
+                {
+                    if (CanDeferNaturalDeathIntegration)
+                        ReclaimNaturalDeaths(at, advanced);
+                    else
+                    {
+                        AdvanceParticles(at, advanced);
+                        advanced = at;
+                    }
+                    capacityUntil = null;
+                }
                 float time = Mathf.Lerp(entry.from, entry.to, entry.Fraction);
                 float phase = entry.burst ? entry.phase : Mathf.Repeat(time, main.duration) / main.duration;
                 int amount = entry.burst ? entry.count : entry.index + 1;
@@ -101,6 +110,29 @@ public sealed partial class ParticleSystem
             //Offsets are relative to this Step; surviving particles start the next at zero.
             for (int i = 0; i < count; i++) particles[i].birthOffset = 0;
             scheduledEmissions.Clear();
+        }
+    }
+
+    //Without death observers, expired particles only occupy capacity. Keep survivors
+    //deferred until the normal substep ends instead of integrating the entire pool
+    //again at every replacement birth. Stateful physics, trails, child emission and
+    //randomized forces retain the chronological integration path.
+    private bool CanDeferNaturalDeathIntegration =>
+        main.ringBufferMode == ParticleSystemRingBufferMode.Disabled &&
+        !collision.enabled && !trigger.enabled && !trails.enabled && trailStates.Count == 0 &&
+        !subEmitters.enabled && subEmissionEvents.Count == 0 &&
+        !(forceOverLifetime.enabled && forceOverLifetime.randomized);
+
+    private void ReclaimNaturalDeaths(float at, float advanced)
+    {
+        for (int i = count - 1; i >= 0; i--)
+        {
+            ref Particle particle = ref particles[i];
+            float death = Math.Max(advanced, particle.birthOffset) + Math.Max(0, particle.remainingLifetime);
+            if (death > at) continue;
+            ReleaseParticle(particle.identity);
+            particles[i] = particles[--count];
+            particles[count] = default;
         }
     }
 }
