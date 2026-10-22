@@ -118,6 +118,7 @@ class Program
         long boundOverhead = GC.GetAllocatedBytesForCurrentThread() - before;
         Console.WriteLine("Pre-bound Harmony dispatch allocations=" + boundOverhead + " /2000 calls.");
         Console.WriteLine("Patched probe allocations=" + overhead + " /2000 calls; direct timer bookkeeping allocations=" + directOverhead + ". Harmony dispatch overhead must be considered in allocation attribution.");
+        CheckRootSummary();
         Console.WriteLine("PASS: real Harmony prefixes/finalizers; constructor; exception propagation; nesting/self time; recursion; allocation accounting; scoped host calls; bounded same-frame spikes; off-thread rejection; reset; 2000 zero-allocation timer bookkeeping probes and measured Harmony dispatch allocations.");
                 Analyzer.Profiling.Analyzer.Logs.Add(new ProfileLog { label = "visible-中文", average = 1.25, max = 8, total = 25, calls = 10, entries = 20, percent = .5 });
         Analyzer.Profiling.Analyzer.Logs.Add(new ProfileLog { label = "hidden", average = 9 });
@@ -131,6 +132,47 @@ class Program
         Assert(Extensions.Clipboard.Contains("visible-中文"), "Copy action did not deliver report to clipboard adapter");
         Console.WriteLine("PASS: current-table filters; Unicode; invariant numeric format under fr-FR; detail sections; clipboard adapter action.");
         if (Environment.GetEnvironmentVariable("DPA_METADATA_CHECK") == "1") CheckCatalog();
+    }
+    static void CheckRootSummary()
+    {
+        var type = typeof(RimUnityTiming);
+        const BindingFlags f = BindingFlags.NonPublic | BindingFlags.Static;
+        RimUnityTiming.RequestReset(); Report();
+        var complete = type.GetMethod("CompleteFrame", f);
+        for (int i = 0; i < 8202; i++)
+        {
+            type.GetField("frame", f).SetValue(null, 1000 + i);
+            type.GetField("frameRoot", f).SetValue(null, (i + 1L) * System.Diagnostics.Stopwatch.Frequency / 1000);
+            type.GetField("frameRootAlloc", f).SetValue(null, 16L);
+            complete.Invoke(null, null);
+        }
+        string r = Report(); var row = Row(r, "session_root_cpu");
+        Assert(row[1] == "8201" && Math.Abs(D(row[2]) - 4102) < .001 && Math.Abs(D(row[3]) - 8202) < .001 && D(row[4]) == 16,
+            "Completed root totals/first-frame exclusion incorrect");
+        Assert(r.Contains("8192\t1010\t9201\t4106.000000\t7793.000000\t8121.000000"), "Bounded root quantiles or frame range incorrect");
+        // An invalid frame never enters the valid summary.
+        type.GetField("frameInvalid", f).SetValue(null, true); complete.Invoke(null, null);
+        Assert(Row(Report(), "session_root_cpu")[1] == "8201", "Invalid root frame retained");
+        RimUnityTiming.RequestReset();
+        Assert(Row(Report(), "session_root_cpu")[1] == "0", "Root session reset retained samples");
+        RimUnityTiming.Begin(typeof(Probe).GetMethod("Parent"), out var parent);
+        Probe.Child();
+        RimUnityTiming.End(parent, null);
+        long oneFrame = (long)type.GetField("frameRoot", f).GetValue(null);
+        Assert(Math.Abs(oneFrame * 1000d / System.Diagnostics.Stopwatch.Frequency - D(Row(Report(), "Probe:Parent(")[3])) < .00001,
+            "Nested child counted twice in root total");
+        var token = RimUnity.Diagnostics.DpaDiagnostics.BeginSubmit();
+        RimUnity.Diagnostics.DpaDiagnostics.Reset();
+        RimUnity.Diagnostics.DpaDiagnostics.EndSubmit(token, 42, 4, 6, 3);
+        var text = new StringBuilder(); RimUnity.Diagnostics.DpaDiagnostics.AppendReport(text);
+        Assert(!text.ToString().Contains("42\t"), "Late submit survived reset");
+        var t = RimUnity.Diagnostics.DpaDiagnostics.BeginSubmit();
+        Thread.SpinWait(1000);
+        RimUnity.Diagnostics.DpaDiagnostics.EndSubmit(t, 99, 4, 6, 3);
+        Assert(Report().Contains("99\t"), "Enabled submit not recorded: " + Report());
+        RimUnityTiming.RequestReset();
+        Assert(!Report().Contains("99\t"), "DPA reset retained runtime submit records");
+        Console.WriteLine("PASS root CPU: nested roots once; first/invalid/current exclusions; session mean/max/allocation; 8192-sample rollover and quantiles; runtime reset/late submits.");
     }
     static void CheckCatalog()
     {

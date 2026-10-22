@@ -12,8 +12,53 @@ internal static class Program
     { if (!valid) throw new Exception(message); checks++; }
     private static void Main()
     {
-        Nesting(); Lifecycle(); Windows(); Batch(); Pages(); PoolLifecycle(); Population(); ObserverCost(); Reports();
+        Families(); SnapshotCoverage(); Nesting(); Lifecycle(); Windows(); Batch(); Pages(); PoolLifecycle(); Population(); ObserverCost(); Reports();
         Console.WriteLine($"PASS {checks} CPU capture/batch checks (production collector and batch code; fake mesh/host, no GPU).");
+    }
+    private static void Families()
+    {
+        var cpu = new LabCpuMetrics(3); cpu.RegisterSystem(101, 2); cpu.RegisterSystem(102, 7); cpu.Start();
+        using (LabCpuMetrics.MeasureSystem(LabCpuStage.ParticleRenderer, 101))
+        {
+            using (LabCpuMetrics.Measure(LabCpuStage.ParticleAttributes)) { keep = new byte[128]; }
+            using (LabCpuMetrics.MeasureSystem(LabCpuStage.SimulationSystemStep, 102)) { }
+            using (LabCpuMetrics.MeasureSystem(LabCpuStage.ParticleRenderer, 999))
+                using (LabCpuMetrics.Measure(LabCpuStage.ParticleAttributes)) { }
+        }
+        cpu.CompleteFrame();
+        Check(cpu.Family(2, LabCpuStage.ParticleAttributes).Calls == 1, "family inherited by child scopes; unknown system does not inherit unrelated family");
+        Check(cpu.Family(7, LabCpuStage.SimulationSystemStep).Calls == 1 && cpu.Family(2, LabCpuStage.SimulationSystemStep).Calls == 0, "nested system attribution uses its own family");
+        Check(cpu.Family(2, LabCpuStage.ParticleAttributes).SelfBytes >= 128, "family bytes attributed");
+        cpu.CompleteFrame();
+        Check(cpu.Family(2, LabCpuStage.ParticleAttributes).Calls == 1, "family pending clears after completed frame");
+        using (LabCpuMetrics.MeasureSystem(LabCpuStage.ParticleRenderer, 101)) { }
+        cpu.Stop();
+        Check(cpu.Family(2, LabCpuStage.ParticleRenderer).Calls == 1, "unfinished tail frame excluded from family totals");
+        using (LabCpuMetrics.MeasureSystem(LabCpuStage.ParticleRenderer, 101)) { }
+        Check(cpu.Family(2, LabCpuStage.ParticleRenderer).Calls == 1, "disabled capture cannot change family totals");
+        var warm = new LabCpuMetrics(1); warm.RegisterSystem(1, 0); warm.Start();
+        for (int i = 0; i < 100; i++)
+            using (LabCpuMetrics.MeasureSystem(LabCpuStage.ParticleRenderer, 1))
+                using (LabCpuMetrics.Measure(LabCpuStage.ParticleAttributes)) { }
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 10000; i++)
+            using (LabCpuMetrics.MeasureSystem(LabCpuStage.ParticleRenderer, 1))
+                using (LabCpuMetrics.Measure(LabCpuStage.ParticleAttributes)) { }
+        warm.CompleteFrame();
+        Check(GC.GetAllocatedBytesForCurrentThread() == before, "family scopes and completed-frame aggregation allocate zero bytes after warmup");
+        warm.Stop();
+    }
+    private static void SnapshotCoverage()
+    {
+        var cpu = new LabCpuMetrics(2); cpu.Start();
+        LabCpuMetrics.RecordSnapshot(false, 9, -1); LabCpuMetrics.RecordSnapshot(true, 0, 1); cpu.CompleteFrame();
+        var first = cpu.GetSnapshot(0);
+        Check(first.HdrCalls == 1 && first.HdrCommands == 9 && first.BloomCalls == 1 && first.BloomCommands == 0, "empty Bloom is not missing Bloom");
+        LabCpuMetrics.RecordSnapshot(true, 7, 1); LabCpuMetrics.RecordSnapshot(true, 3, 4); cpu.CompleteFrame();
+        var second = cpu.GetSnapshot(1);
+        Check(second.HdrCalls == 0 && second.BloomCalls == 2 && second.BloomCommands == 10 && second.BloomMask == 5, "snapshot counts reset per frame and combine multiple captures");
+        cpu.Stop(); LabCpuMetrics.RecordSnapshot(true, 100, -1);
+        Check(cpu.GetSnapshot(1) == second, "disabled capture cannot change retained coverage");
     }
     private static void Nesting()
     {
@@ -265,7 +310,7 @@ internal static class Program
     }
     private static void Reports()
     {
-        var lab = new PerformanceLab();
+        var lab = new PerformanceLab { RegisterFixtureFamily = true };
         using var sampler = new LabSampler(lab);
         Time.frameCount++; ParticleDrawBatch.Begin(); Append(new Material()); ParticleDrawBatch.Flush(); ParticleDrawBatch.End();
         sampler.Start(60);
@@ -282,6 +327,9 @@ internal static class Program
             using (LabCpuMetrics.BridgeWindow())
                 using (LabCpuMetrics.Measure(LabCpuStage.BridgeUpdate)) { keep = new byte[256]; }
             LabCpuMetrics.Batch(LabBatchReason.MaterialChanged);
+            LabCpuMetrics.RecordSnapshot(false, 12, -1); LabCpuMetrics.RecordSnapshot(true, i == 0 ? 0 : 7, 1 << 30);
+            using (LabCpuMetrics.MeasureSystem(LabCpuStage.ParticleRenderer, 123))
+                using (LabCpuMetrics.Measure(LabCpuStage.ParticleGeometry)) { }
             Waylith.EngineApplication.Instance.Emit();
         }
         ParticleDrawBatch.Clear(); sampler.Stop("fixture", export: true);
@@ -301,6 +349,16 @@ internal static class Program
             && root.GetProperty("Frames")[0].GetProperty("ParticlePool").GetProperty("ManagedBufferBytes").GetInt64() > 0,
             "pool start, sampled peak and cleared endpoint remain distinct in report");
         Check(root.GetProperty("Cpu").GetProperty("Enabled").GetBoolean() && !root.GetProperty("Configuration").GetProperty("RuntimeIsStandalone").GetBoolean(), "source/measurement metadata exported");
+        var coverage = root.GetProperty("Cpu").GetProperty("SnapshotCoverage");
+        var familyRows = root.GetProperty("Cpu").GetProperty("Families");
+        Check(familyRows.GetArrayLength() == 2 && familyRows[0].GetProperty("Calls").GetInt64() == 2
+            && familyRows[0].GetProperty("Family").GetInt32() == 0, "completed frame family stages exported to JSON");
+        Check(File.ReadAllLines(prefix + ".families.csv").Length == 3
+            && File.ReadAllLines(prefix + ".families.csv").All(row => row.Split(',').Length == 8), "aggregate family CSV schema");
+        Check(coverage.GetProperty("HdrCommands").GetInt64() == 24 && coverage.GetProperty("BloomCommands").GetInt64() == 7
+            && coverage.GetProperty("BloomNonemptyFrames").GetInt32() == 1 && coverage.GetProperty("BloomMask").GetInt32() == (1 << 30), "actual snapshot coverage exported");
+        Check(File.ReadAllLines(prefix + ".snapshots.csv").Length == 3
+            && File.ReadAllLines(prefix + ".snapshots.csv").All(row => row.Split(',').Length == 6), "snapshot CSV frame alignment");
         var bridge = root.GetProperty("Cpu").GetProperty("Stages")[0];
         Check(bridge.GetProperty("Calls").GetInt64() == 2 && bridge.GetProperty("SelfBytesPerFrame").GetDouble() >= 256, "real sampler exports phase calls/allocations");
         var rows = File.ReadAllLines(prefix + ".frames.csv");
@@ -317,7 +375,7 @@ internal static class Program
         prefix = Path.ChangeExtension(sampler.LastReport, null);
         using var baseline = JsonDocument.Parse(File.ReadAllText(prefix + ".json"));
         Check(!baseline.RootElement.GetProperty("Cpu").GetProperty("Enabled").GetBoolean(), "baseline records CPU capture disabled");
-        Check(!File.Exists(prefix + ".stages.csv") && !File.Exists(prefix + ".batch.csv") && !File.Exists(prefix + ".windows.csv"), "disabled capture exports no fictitious zero stage rows");
+        Check(!File.Exists(prefix + ".stages.csv") && !File.Exists(prefix + ".batch.csv") && !File.Exists(prefix + ".windows.csv") && !File.Exists(prefix + ".families.csv"), "disabled capture exports no fictitious zero stage rows");
         lab.Playing = false; lab.LiveCount = 0; lab.StableReady = false;
         Thread.Sleep(2); sampler.Start(60); Waylith.EngineApplication.Instance.Emit(); sampler.Stop("empty", export: true);
         using var empty = JsonDocument.Parse(File.ReadAllText(Path.ChangeExtension(sampler.LastReport, ".json")));

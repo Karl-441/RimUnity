@@ -16,8 +16,129 @@ internal static class Program
     {
         runtime = Path.GetFullPath(args[0]); game = Path.GetFullPath(args[1]); harmony = Path.GetFullPath(args[2]);
         AssemblyLoadContext.Default.Resolving += (_, name) => Resolve(name);
-        try { if (args[3] == "--particle-physics-timeline") ParticlePhysicsTimelineChecks.Run(); else if (args[3] == "--particle-turnover") ParticleTurnoverChecks.Run(); else if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
+        try { if (args[3] == "--sort-reuse") CheckSortReuse(Path.GetFullPath(args[4])); else if (args[3] == "--noise-reuse") NoiseReuseChecks.Run(Path.GetFullPath(args[4])); else if (args[3] == "--trail-reuse") CheckTrailReuse(Path.GetFullPath(args[4])); else if (args[3] == "--mixed-stress") MixedStressChecks.Run(); else if (args[3] == "--particle-physics-timeline") ParticlePhysicsTimelineChecks.Run(); else if (args[3] == "--particle-turnover") ParticleTurnoverChecks.Run(); else if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+    }
+    private static void CheckTrailReuse(string baseline)
+    {
+        RimUnity.Runtime.NativeRuntime.InitializeOnCurrentThread();
+        var context = new AssemblyLoadContext("trail endpoint baseline", true);
+        context.Resolving += (_, name) => name.Name == "RimUnity" ? null : Resolve(name);
+        using var old = new Rig(context.LoadFromAssemblyPath(baseline));
+        using var current = new Rig(typeof(ParticleSystem).Assembly);
+        int scenario = 0;
+        foreach (string simulation in new[] { "Local", "World", "Custom" })
+        foreach (string scaling in new[] { "Hierarchy", "Local", "Shape" })
+        foreach (string texture in new[] { "Stretch", "Tile", "DistributePerSegment", "RepeatPerSegment", "Static" })
+        foreach (bool ribbon in new[] { false, true })
+        foreach (int count in new[] { 0, 1, 2, 3, 17, 64 })
+        foreach (int space in new[] { 0, 1, 2 })
+        {
+            old.Configure(simulation, scaling, "Billboard", "View", 1, scenario);
+            current.Configure(simulation, scaling, "Billboard", "View", 1, scenario);
+            var a = old.Trail(count, texture, ribbon, space, scenario);
+            var b = current.Trail(count, texture, ribbon, space, scenario);
+            var expected = old.TrailChannels(a, ribbon); var actual = current.TrailChannels(b, ribbon);
+            foreach (string channel in expected.Keys)
+                Check(expected[channel].SequenceEqual(actual[channel]), $"trail mismatch {scenario} {texture}/{ribbon}/{count}/{space}: {channel}");
+            scenario++;
+        }
+        Console.WriteLine($"PASS {scenario} trail scenarios / {scenario * 9} exact channel comparisons, including empty, Ribbon, five texture modes, event/world/local/custom spaces and edited curves. No GPU.");
+        foreach (var rig in new[] { old, current }) rig.Configure("Local", "Hierarchy", "Billboard", "View", 1, 1);
+        var slow = old.TrailBatch(old.Trail(17, "Stretch", false, 0, 1), false);
+        var fast = current.TrailBatch(current.Trail(17, "Stretch", false, 0, 1), false);
+        for (int i = 0; i < 60; i++) { slow(); fast(); }
+        for (int run = 0; run < 3; run++)
+            foreach (bool optimized in new[] { false, true })
+            {
+                var action = optimized ? fast : slow;
+                long bytes = GC.GetAllocatedBytesForCurrentThread(), start = Stopwatch.GetTimestamp();
+                for (int i = 0; i < 100; i++) action();
+                long ticks = Stopwatch.GetTimestamp() - start;
+                Check(GC.GetAllocatedBytesForCurrentThread() == bytes, "trail geometry allocates after warmup");
+                Console.WriteLine($"Trail CPU run {run + 1}, optimized={optimized}: {ticks * 1000d / Stopwatch.Frequency / 100:F6} ms per 256 trails x 17 points, 0 B; synthetic geometry only.");
+            }
+    }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void CheckSortReuse(string baseline)
+    {
+        RimUnity.Runtime.NativeRuntime.InitializeOnCurrentThread();
+        var context = new AssemblyLoadContext("particle sort baseline", true);
+        context.Resolving += (_, name) => name.Name == "RimUnity" ? null : Resolve(name);
+        using var old = new Rig(context.LoadFromAssemblyPath(baseline));
+        using var current = new Rig(typeof(ParticleSystem).Assembly);
+        int scenario = 0;
+        foreach (string simulation in new[] { "Local", "World", "Custom" })
+        foreach (string scaling in new[] { "Hierarchy", "Local", "Shape" })
+        foreach (string mode in new[] { "Billboard", "Stretch", "HorizontalBillboard", "VerticalBillboard", "Mesh" })
+        foreach (string alignment in new[] { "View", "World", "Local", "Facing", "Velocity" })
+        for (int camera = 0; camera < 3; camera++)
+        {
+            old.Configure(simulation, scaling, mode, alignment, camera, scenario);
+            current.Configure(simulation, scaling, mode, alignment, camera, scenario);
+            var expected = old.Geometry(camera, scenario); var actual = current.Geometry(camera, scenario);
+            foreach (string field in expected.Keys)
+                Check(expected[field].SequenceEqual(actual[field]), $"prepared velocity geometry mismatch {scenario} {mode}/{alignment}/{simulation}/{scaling}/camera{camera}: {field}");
+            // Visibility and draw must retain the same axes and size clamp.
+            Check(old.Axes(camera, scenario).SequenceEqual(current.Axes(camera, scenario)), "visibility axes changed");
+            scenario++;
+        }
+        Console.WriteLine($"PASS {scenario} geometry + visibility scenarios / {scenario * 9} exact channel comparisons, including Mesh and prepared world velocity. No GPU.");
+        int sorts = 0;
+        foreach (string simulation in new[] { "Local", "World", "Custom" })
+        foreach (string scaling in new[] { "Hierarchy", "Local", "Shape" })
+        foreach (string sort in new[] { "None", "Distance", "OldestInFront", "YoungestInFront", "Depth" })
+        foreach (int count in new[] { 0, 1, 2, 16, 64, 257 })
+        foreach (int distribution in new[] { 0, 1, 2 })
+        {
+            old.Configure(simulation, scaling, "Billboard", "View", 1, sorts);
+            current.Configure(simulation, scaling, "Billboard", "View", 1, sorts);
+            var slow = old.SortAction(count, sort, distribution); var fast = current.SortAction(count, sort, distribution);
+            for (int draw = 0; draw < 3; draw++)
+            {
+                slow(); fast();
+                Check(old.SortOrder().SequenceEqual(current.SortOrder()), $"sort order differs: {sort}/{count}/{distribution}/{simulation}/{scaling}/draw{draw}");
+                Check(current.SortScratchEmpty(), "sort scratch or system reference retained");
+                // New draw snapshots must observe moved parents/custom spaces/cameras.
+                old.MoveSortRig(draw); current.MoveSortRig(draw);
+            }
+            sorts++;
+        }
+        Console.WriteLine($"PASS {sorts} sort configurations x 3 draws: identical order, ties/near ties/events, camera/transform changes and scratch cleanup.");
+        current.CheckSortFailure();
+        foreach (var path in new[] { ("Billboard", "View"), ("Billboard", "Velocity"), ("Stretch", "Velocity"), ("Mesh", "Velocity") })
+        {
+            old.Configure("Local", "Hierarchy", path.Item1, path.Item2, 1, 1);
+            current.Configure("Local", "Hierarchy", path.Item1, path.Item2, 1, 1);
+            var slowGeometry = old.BuildGeometryBatch(); var fastGeometry = current.BuildGeometryBatch();
+            for (int i = 0; i < 50; i++) { slowGeometry(); fastGeometry(); }
+            for (int run = 0; run < 3; run++) foreach (bool optimized in new[] { false, true })
+            {
+                var action = optimized ? fastGeometry : slowGeometry;
+                long bytes = GC.GetAllocatedBytesForCurrentThread(), start = Stopwatch.GetTimestamp();
+                for (int i = 0; i < 50; i++) action();
+                long ticks = Stopwatch.GetTimestamp() - start;
+                Check(GC.GetAllocatedBytesForCurrentThread() == bytes, "prepared velocity geometry allocates after warmup");
+                Console.WriteLine($"Geometry CPU run {run + 1}, {path.Item1}/{path.Item2}, optimized={optimized}: {ticks * 1000d / Stopwatch.Frequency / 50:F6} ms per 4000 particles / 300 systems, 0 B; synthetic only.");
+            }
+        }
+        foreach (string simulation in new[] { "World", "Local" })
+        foreach (string sort in new[] { "Depth", "Distance", "OldestInFront" })
+        {
+            old.Configure(simulation, "Hierarchy", "Billboard", "View", 1, 1);
+            current.Configure(simulation, "Hierarchy", "Billboard", "View", 1, 1);
+            var slow = old.SortAction(64, sort, 0); var fast = current.SortAction(64, sort, 0);
+            for (int i = 0; i < 1000; i++) { slow(); fast(); }
+            for (int run = 0; run < 3; run++) foreach (bool optimized in new[] { false, true })
+            {
+                var action = optimized ? fast : slow;
+                long bytes = GC.GetAllocatedBytesForCurrentThread(), start = Stopwatch.GetTimestamp();
+                for (int i = 0; i < 1000; i++) action();
+                long ticks = Stopwatch.GetTimestamp() - start;
+                Check(GC.GetAllocatedBytesForCurrentThread() == bytes, "sort path allocates after warmup");
+                Console.WriteLine($"Sort CPU run {run + 1}, {simulation}/{sort}, optimized={optimized}: {ticks * 1000d / Stopwatch.Frequency / 1000:F6} ms per 64 particles, includes snapshots/order refill, 0 B; synthetic only.");
+            }
+        }
     }
     private static Assembly Resolve(AssemblyName name)
     {
@@ -386,6 +507,125 @@ internal static class Program
                 append.Invoke(Renderer, drawSpace == null ? new[] { System, p, cameraData } : new[] { System, p, cameraData, space });
             }
             return Channels();
+        }
+        internal object Trail(int count, string texture, bool ribbon, int spaceMode, int scenario)
+        {
+            var module = Get(System, "trails");
+            SetEnum(module, "textureMode", texture); Set(module, "worldSpace", spaceMode == 1);
+            var curve = ps.GetNestedType("MinMaxCurve");
+            var animation = ps.Assembly.GetType("RimUnity.AnimationCurve");
+            var line = animation.GetMethod("Linear").Invoke(null, new object[] { 0f, .15f, 1f, 1.3f });
+            Set(module, "widthOverTrail", scenario % 2 == 0 ? Activator.CreateInstance(curve, new object[] { .7f })
+                : Activator.CreateInstance(curve, new object[] { 1.2f, line }));
+            var gradient = new Gradient { mode = (GradientMode)(scenario % 3) };
+            gradient.SetKeys(new[] { new GradientColorKey(new Color(.1f, .5f, 1, 1), 0), new GradientColorKey(new Color(1, .2f, .4f, .3f), 1) },
+                new[] { new GradientAlphaKey(.2f, 0), new GradientAlphaKey(.9f, 1) });
+            var gradientType = ps.GetNestedType("MinMaxGradient");
+            Set(module, "colorOverTrail", Activator.CreateInstance(gradientType, new object[] { gradient }));
+            Set(module, "colorOverLifetime", Activator.CreateInstance(gradientType, new object[] { gradient }));
+            var trailType = ps.GetNestedType("TrailState", BindingFlags.NonPublic);
+            var pointType = ps.GetNestedType("TrailPoint", BindingFlags.NonPublic);
+            var trail = Activator.CreateInstance(trailType, true);
+            Set(trail, "width", .45f); Set(trail, "color", new Color(.3f, .5f, .7f, .8f));
+            if (spaceMode == 2)
+            {
+                var eventData = Activator.CreateInstance(eventSpace, true);
+                Set(eventData, "local", true); Set(eventData, "position", new Vector3(3, -4, 5));
+                Set(eventData, "rotation", Quaternion.Euler(13, 44, -7)); Set(eventData, "scale", new Vector3(-2, .7f, 0));
+                Set(trail, "space", eventData);
+            }
+            var points = (IList)Get(trail, "points");
+            for (int i = 0; i < count; i++)
+            {
+                var point = Activator.CreateInstance(pointType);
+                Set(point, "position", new Vector3(i / 3f, i % 3 == 0 ? .2f : .5f, i * .13f));
+                Set(point, "width", .1f + i * .01f); Set(point, "color", new Color(.3f, .2f + i * .01f, .7f, .6f));
+                Set(point, "lifetime", i % 4 == 0 ? float.PositiveInfinity : 2f);
+                Set(point, "remaining", 1f + i * .02f); Set(point, "distance", i * .21f);
+                points.Add(point);
+            }
+            return trail;
+        }
+        internal Dictionary<string, object[]> TrailChannels(object trail, bool ribbon)
+        {
+            renderer.GetMethod("ClearMesh", Flags).Invoke(Renderer, null);
+            renderer.GetMethod("AppendTrail", Flags).Invoke(Renderer, new[] { System, trail, ribbon, (object)Vector3.forward });
+            return Channels();
+        }
+        internal Action TrailBatch(object trail, bool ribbon)
+        {
+            var i = Expression.Variable(typeof(int), "i"); var done = Expression.Label();
+            var self = Expression.Constant(Renderer, renderer);
+            return Expression.Lambda<Action>(Expression.Block(new[] { i },
+                Expression.Call(self, renderer.GetMethod("ClearMesh", Flags)), Expression.Assign(i, Expression.Constant(0)),
+                Expression.Loop(Expression.IfThenElse(Expression.LessThan(i, Expression.Constant(256)), Expression.Block(
+                    Expression.Call(self, renderer.GetMethod("AppendTrail", Flags), Expression.Constant(System, ps),
+                        Expression.Constant(trail, trail.GetType()), Expression.Constant(ribbon), Expression.Constant(Vector3.forward)),
+                    Expression.PostIncrementAssign(i), Expression.Empty()), Expression.Break(done)), done))).Compile();
+        }
+        internal Vector3[] Axes(int camera, int scenario)
+        {
+            object cameraData = Activator.CreateInstance(cameraState, Flags, null, new[] { camera == 0 ? null : Camera, null, (object)(scenario % 2 == 0) }, null);
+            var args = new[] { System, Particle(2, true), cameraData, (object)new Vector3(1, 2, 3), new Vector3(.7f, .3f, 1), null, null };
+            renderer.GetMethod("BillboardAxes", Flags).Invoke(Renderer, args);
+            return new[] { (Vector3)args[5], (Vector3)args[6] };
+        }
+        internal Action SortAction(int count, string mode, int distribution)
+        {
+            SetEnum(Renderer, "sortMode", mode);
+            var data = Array.CreateInstance(particle, count);
+            for (int i = 0; i < count; i++)
+            {
+                var p = Particle(i, i % 3 == 0);
+                float x = distribution == 0 ? (i * 137 % 61) * .03f : distribution == 1 ? 0 : (i % 3) * float.Epsilon;
+                Set(p, "position", new Vector3(x, 0, distribution == 0 ? (i * 47 % 71) * .01f : x));
+                if (distribution != 0) Set(p, "eventSpace", null);
+                Set(p, "elapsedAge", distribution == 0 ? (i * 17 % 39) * .13f : x);
+                data.SetValue(p, i);
+            }
+            Set(System, "particles", data); Set(System, "count", count);
+            var order = (List<int>)Get(Renderer, "order");
+            var self = Expression.Constant(Renderer, renderer); var sys = Expression.Constant(System, ps);
+            var cam = Expression.Variable(cameraState, "camera"); var space = Expression.Variable(drawSpace, "space");
+            var steps = new List<Expression> {
+                Expression.Assign(cam, Expression.New(cameraState.GetConstructors(Flags).Single(), Expression.Constant(Camera, Camera.GetType()), Expression.Constant(null, cameraState.GetConstructors(Flags).Single().GetParameters()[1].ParameterType), Expression.Constant(true))),
+                Expression.Assign(space, Expression.New(drawSpace.GetConstructors(Flags).Single(), sys)) };
+            if (mode != "None")
+            {
+                var method = renderer.GetMethod("SortParticles", Flags);
+                if (method != null) steps.Add(Expression.Call(self, method, sys, cam, space));
+                else
+                {
+                    steps.Add(Expression.Assign(Expression.Field(self, renderer.GetField("sortingSystem", Flags)), sys));
+                    steps.Add(Expression.Assign(Expression.Field(self, renderer.GetField("sortingPosition", Flags)), Expression.Field(cam, cameraState.GetField("Position", Flags))));
+                    steps.Add(Expression.Assign(Expression.Field(self, renderer.GetField("sortingForward", Flags)), Expression.Field(cam, cameraState.GetField("Forward", Flags))));
+                    var comparison = (Comparison<int>)renderer.GetMethod("CompareParticles", Flags).CreateDelegate(typeof(Comparison<int>), Renderer);
+                    steps.Add(Expression.TryFinally(Expression.Call(Expression.Constant(order), typeof(List<int>).GetMethod("Sort", new[] { typeof(Comparison<int>) }), Expression.Constant(comparison)),
+                        Expression.Assign(Expression.Field(self, renderer.GetField("sortingSystem", Flags)), Expression.Constant(null, ps))));
+                }
+            }
+            steps.Add(Expression.Empty());
+            var execute = Expression.Lambda<Action>(Expression.Block(new[] { cam, space }, steps)).Compile();
+            return () => { order.Clear(); for (int i = 0; i < count; i++) order.Add(i); execute(); };
+        }
+        internal void CheckSortFailure()
+        {
+            var invalid = SortAction(16, "Depth", 0);
+            Set(System, "particles", Array.CreateInstance(particle, 1));
+            bool failed = false;
+            try { invalid(); } catch (IndexOutOfRangeException) { failed = true; }
+            Check(failed && SortScratchEmpty(), "exception during coordinate preparation clears partial scratch and system reference");
+            var restored = SortAction(16, "Depth", 0); restored();
+            Check(SortOrder().Distinct().Count() == 16 && SortScratchEmpty(), "renderer can sort again after preparation failure");
+        }
+        internal int[] SortOrder() => ((List<int>)Get(Renderer, "order")).ToArray();
+        internal bool SortScratchEmpty() => Get(Renderer, "sortingSystem") == null
+            && ((List<Vector3>)Get(Renderer, "sortingWorldPositions")).Count == 0;
+        internal void MoveSortRig(int draw)
+        {
+            Root.transform.localPosition += new Vector3(.2f * draw, -.1f, .3f);
+            Custom.transform.localPosition += new Vector3(-1, .2f, .1f);
+            CameraOwner.transform.localRotation = Quaternion.Euler(15 * draw, 45, 7);
         }
         private Dictionary<string, object[]> Channels()
         {

@@ -164,13 +164,22 @@ internal sealed class HdrDrawFrame : IDisposable
         using var cpu = Diagnostics.LabCpuMetrics.Measure(readOnlyDepth
             ? Diagnostics.LabCpuStage.BloomSnapshot : Diagnostics.LabCpuStage.HdrSnapshot);
         ArgumentNullException.ThrowIfNull(source);
-        workspace = RentWorkspace(readOnlyDepth);
+        var trace = new Diagnostics.DpaDiagnostics.HdrCapture(readOnlyDepth,
+            System.Runtime.CompilerServices.Unsafe.SizeOf<MaterialUniformBytes>());
+        bool complete = false;
+        var stage = Diagnostics.DpaDiagnostics.HdrStage.Setup;
+        var token = trace.Begin();
         try
         {
+            workspace = RentWorkspace(readOnlyDepth);
             Frame = Shell(source, MeshDrawFrame.RentList(), MeshDrawFrame.RentList());
+            trace.DynamicInput = source.Draws.Count; trace.PersistentInput = source.PersistentDraws.Count;
+            trace.End(stage, token); stage = Diagnostics.DpaDiagnostics.HdrStage.FilterDynamic; token = trace.Begin();
             var dynamic = workspace.Dynamic;
             foreach (var item in source.Draws) if (ShouldCapture(item, mask, readOnlyDepth)) dynamic.Add(item);
+            trace.End(stage, token); stage = Diagnostics.DpaDiagnostics.HdrStage.SortDynamic; token = trace.Begin();
             dynamic.Sort((a, b) => a.SortKey.CompareTo(b.SortKey));
+            trace.End(stage, token); stage = Diagnostics.DpaDiagnostics.HdrStage.MergeAndLookup; token = trace.Begin();
             var persistent = source.PersistentDraws;
             var bindings = workspace.Bindings;
             int p = 0, d = 0;
@@ -181,8 +190,11 @@ internal sealed class HdrDrawFrame : IDisposable
                 var item = p < persistent.Count && (d == dynamic.Count || persistent[p].SortKey.CompareTo(dynamic[d].SortKey) <= 0)
                     ? persistent[p++] : dynamic[d++];
                 var original = item.Binding;
-                if (!bindings.TryGetValue(original, out var captured))
+                bool found = bindings.TryGetValue(original, out var captured);
+                trace.End(stage, token); token = default;
+                if (!found)
                 {
+                    stage = Diagnostics.DpaDiagnostics.HdrStage.BindingRefresh; token = trace.Begin();
                     bool linear = LinearShaderVariants.TryGet(original.Shader, out var shader);
                     if (!linear) shader = original.Shader;
                     var state = original.PipelineState;
@@ -192,8 +204,10 @@ internal sealed class HdrDrawFrame : IDisposable
                     var key = new ShaderVariantKey(shader, variant.DynamicKeywordKeyId, variant.DynamicKeywordKey,
                         variant.UseTexture, variant.OutlineMrt, variant.Instanced);
                     captured = new Workspace.CapturedBinding(workspace.Capture(original, shader, key, state), linear, shader.SceneGrab?.Queue ?? int.MinValue);
-                    bindings.Add(original, captured);
+                    bindings.Add(original, captured); trace.Bindings++;
+                    trace.End(stage, token); token = default;
                 }
+                stage = Diagnostics.DpaDiagnostics.HdrStage.CommandCopy; token = trace.Begin();
                 var copy = SnapshotDrawBuffers.Available ? workspace.CopyDraw(item, captured)
                     : Rent(item.Matrix, item.PassId, item.Mesh, captured.Binding, true, in item.Uniforms, in item.Resources,
                         Frame.Draws.Count, item.RenderQueue, item.Instancing, item.Layer, 0, item.Storage);
@@ -201,10 +215,14 @@ internal sealed class HdrDrawFrame : IDisposable
                 //If list growth fails, the rented item has not acquired a frame owner yet.
                 try { Frame.Draws.Add(copy); }
                 catch { if (!SnapshotDrawBuffers.Available) FinalDrawItem.Return(copy); throw; }
-                workspace.Linear.Add(captured.Linear ? (byte)1 : (byte)0);
+                workspace.Linear.Add(captured.Linear ? (byte)1 : (byte)0); trace.Commands++;
+                trace.End(stage, token); stage = Diagnostics.DpaDiagnostics.HdrStage.MergeAndLookup; token = trace.Begin();
             }
+            Diagnostics.LabCpuMetrics.RecordSnapshot(readOnlyDepth, Frame.Draws.Count, mask);
+            trace.End(stage, token); token = default; complete = true;
         }
-        catch { Dispose(); throw; }
+        catch { trace.End(stage, token); token = default; Dispose(); throw; }
+        finally { trace.Complete(complete); }
     }
 
     //借用的 PersistentDraws 不归临时帧销毁，所有绘制项只由快照释放一次。

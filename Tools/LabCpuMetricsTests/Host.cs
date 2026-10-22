@@ -145,13 +145,18 @@ namespace RimUnity
     internal static class RimUnityMod
     {
         internal static readonly Settings Bloom = new();
-        internal sealed class Settings { internal Settings Snapshot() => this; internal bool Enabled => true; }
+        internal sealed class Settings { internal Settings Snapshot() => this; internal bool Enabled => true; internal int LayerMask => 1; internal float Threshold => .8f; internal float Intensity => .6f; internal float SoftKnee => .5f; internal float Scatter => .65f; }
     }
 }
 namespace RimUnity.Diagnostics
 {
     internal sealed class PerformanceLab
     {
+        internal string Scenario = "selected-prefabs";
+        internal bool RegisterFixtureFamily;
+        internal void RegisterCpuFamilies(LabCpuMetrics capture) { if (RegisterFixtureFamily) capture?.RegisterSystem(123, 0); }
+        internal Dictionary<string, int> FixedDistribution => new();
+        internal string[] ActiveEffects => Effects.Where(e => e.Selected).Select(e => e.Mod.PackageIdPlayerFacing + "/" + e.Path).ToArray();
         internal bool IsCurrent = true, StableReady = true, FixedInstances = true, Playing = true, MeasureCpuStages = true;
         internal string Status;
         internal int Concurrency = 20, WarmupSeconds = 10, LiveCount = 20, Spawned = 20, ThrottledFrames;
@@ -169,3 +174,7 @@ namespace RimUnity.Diagnostics
         internal sealed class Mod { internal string PackageIdPlayerFacing; }
     }
 }
+
+namespace RimUnity.Diagnostics { internal static class LabStressScenario { internal const string Version = "mixed-particles-v2"; internal const int Copies = 4, ParticleLimit = 64, WorldLayer = 30; internal static readonly string[] Names = { "fixture" }; } }
+
+namespace Verse { internal static class Find { internal static readonly Driver CameraDriver = new(); internal class Driver { internal float RootSize => 24; } } }

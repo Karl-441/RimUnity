@@ -58,14 +58,14 @@ public sealed partial class ParticleSystemRenderer
     }
 
     //Facing 逐粒子面向观察点，Velocity 沿真实世界速度确定朝向。
-    private Quaternion BillboardAlignment(ParticleSystem system, ParticleSystem.Particle particle, in ParticleCameraState cameraState, Vector3 center)
+    private Quaternion BillboardAlignment(ParticleSystem system, in ParticleCameraState cameraState, Vector3 center, Vector3 worldVelocity)
     {
         if (alignment == ParticleSystemRenderSpace.Local) return system.transform.rotation;
         if (alignment == ParticleSystemRenderSpace.World) return Quaternion.identity;
         return alignment switch
         {
             ParticleSystemRenderSpace.Facing when cameraState.HasCamera => cameraState.Align(center - cameraState.Position),
-            ParticleSystemRenderSpace.Velocity => cameraState.Align(system.WorldVelocity(particle)),
+            ParticleSystemRenderSpace.Velocity => cameraState.Align(worldVelocity),
             _ => cameraState.ViewAlignment
         };
     }

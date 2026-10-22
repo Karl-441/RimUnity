@@ -65,8 +65,10 @@ internal sealed partial class LabSampler : IDisposable
         Stop("重新开始采样", export: true);
         samples = new Sample[Capacity]; count = 0; submitted = 0; lastReport = null;
         cpu = lab.MeasureCpuStages ? new LabCpuMetrics(Capacity) : null;
+        lab.RegisterCpuFamilies(cpu);
         spawnCosts.Clear();
         duration = seconds; startedUtc = DateTime.UtcNow.ToString("O"); stopReason = "";
+        var bloom = RimUnityMod.Bloom.Snapshot();
         configuration = JsonSerializer.SerializeToElement(new
         {
             MapSize = "96x96", lab.Concurrency, lab.Rate, lab.Lifetime, lab.Radius, lab.Scale, lab.RotationX,
@@ -75,14 +77,20 @@ internal sealed partial class LabSampler : IDisposable
             RequestedSeconds = seconds, MaxNewInstancesPerFrame = 16, SpawnBudgetMs = 8, RandomSeed = 9413,
             PlaybackEnabled = lab.Playing, EmptyBaseline = emptyBaseline,
             ParticleBatchVertexLimit = ParticleDrawBatch.VertexLimit, ParticleBatchIndexLimit = ParticleDrawBatch.IndexLimit,
-            Effects = lab.Effects.FindAll(e => e.Selected).ConvertAll(e => e.Mod.PackageIdPlayerFacing + "/" + e.Path),
-            AssetWarnings = lab.Effects.FindAll(e => e.Selected && e.Warnings.Length > 0)
+            Scenario = lab.Scenario, Effects = lab.ActiveEffects, CameraRootSize = Find.CameraDriver?.RootSize,
+            StressFamilies = lab.Scenario == LabStressScenario.Version ? LabStressScenario.Names : Array.Empty<string>(),
+            FixedInstanceDistribution = lab.FixedDistribution,
+            StressWorldLayer = lab.Scenario == LabStressScenario.Version ? LabStressScenario.WorldLayer : -1,
+            StressMaxParticlesPerSystem = lab.Scenario == LabStressScenario.Version ? LabStressScenario.ParticleLimit : 0,
+            AssetWarnings = lab.Effects.FindAll(e => lab.Scenario == "selected-prefabs" && e.Selected && e.Warnings.Length > 0)
                 .ConvertAll(e => new { Effect = e.Mod.PackageIdPlayerFacing + "/" + e.Path, e.Warnings }),
             RimUnityVersion = typeof(PerformanceLab).Assembly.ManifestModule.ModuleVersionId.ToString(),
             GameVersion = typeof(Game).Assembly.ManifestModule.ModuleVersionId.ToString(),
             ProcessorCount = Environment.ProcessorCount, Resolution = UnityEngine.Screen.width + "x" + UnityEngine.Screen.height,
-            BloomEnabled = RimUnityMod.Bloom.Snapshot().Enabled,
-            CpuStagesEnabled = lab.MeasureCpuStages, CpuStageSchema = 3,
+            BloomEnabled = bloom.Enabled, BloomLayerMask = bloom.LayerMask, BloomThreshold = bloom.Threshold, BloomIntensity = bloom.Intensity,
+            BloomSoftKnee = bloom.SoftKnee, BloomScatter = bloom.Scatter,
+            BloomSource = lab.Scenario == LabStressScenario.Version ? "TestMapOnlyOverride" : "PlayerAndContentSettings",
+            CpuStagesEnabled = lab.MeasureCpuStages, CpuStageSchema = 4,
             ParticleUploadMode = "OrderedSubmeshPages", ParticlePageSegmentLimit = ParticleDrawBatch.SegmentLimit,
             ProcessMemorySampling = "BeforeAndAfterOnly; frame process memory columns retain the before-sample snapshot",
             RuntimeVersion = RuntimeInfo.Version, RuntimeProvider = RuntimeInfo.Provider,

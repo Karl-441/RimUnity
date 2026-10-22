@@ -25,6 +25,9 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
     private readonly List<int> order = new();
     private Comparison<int> particleComparison;
     private ParticleSystem sortingSystem;
+    // Numeric scratch owned by this renderer, valid only during synchronous Sort.
+    // Refilled for each camera/draw; never a cross-frame transform cache.
+    private readonly List<Vector3> sortingWorldPositions = new();
     private Vector3 sortingPosition, sortingForward;
     private readonly List<ParticleSystemVertexStream> streams = new();
     private float particleRandom;
@@ -78,7 +81,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
     internal void Draw(ParticleSystem system, Camera camera)
     {
         if (!enabled || !gameObject.activeInHierarchy) return;
-        using var cpu = LabCpuMetrics.Measure(LabCpuStage.ParticleRenderer);
+        using var cpu = LabCpuMetrics.MeasureSystem(LabCpuStage.ParticleRenderer, system.GetInstanceID());
         preparedSpriteTextures.Clear();
         //零上限只隐藏粒子面片，模拟和下方独立绘制的拖尾继续运行。
         if (sharedMaterial != null && renderMode != ParticleSystemRenderMode.None && system.count != 0
@@ -88,31 +91,37 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             var drawSpace = new ParticleSystem.DrawSpace(system);
             ClearMesh(); order.Clear();
             for (int i = 0; i < system.count; i++) order.Add(i);
-            if (sortMode != ParticleSystemSortMode.None)
-            {
-                using var sortCpu = LabCpuMetrics.Measure(LabCpuStage.ParticleSort);
-                sortingSystem = system;
-                sortingPosition = cameraState.Position;
-                sortingForward = cameraState.Forward;
-                try { order.Sort(particleComparison ??= CompareParticles); }
-                finally { sortingSystem = null; }
-            }
+            SortParticles(system, in cameraState, in drawSpace);
             DrawParticleBatches(system, camera, in cameraState, in drawSpace);
         }
         if (system.trails.enabled && trailMaterial != null) DrawTrails(system, camera);
         TrimSpriteBatches();
     }
+    private void SortParticles(ParticleSystem system, in ParticleCameraState cameraState, in ParticleSystem.DrawSpace drawSpace)
+    {
+        if (sortMode == ParticleSystemSortMode.None) return;
+        using var sortCpu = LabCpuMetrics.Measure(LabCpuStage.ParticleSort);
+        sortingSystem = system;
+        sortingPosition = cameraState.Position;
+        sortingForward = cameraState.Forward;
+        try
+        {
+            if (sortMode != ParticleSystemSortMode.OldestInFront && sortMode != ParticleSystemSortMode.YoungestInFront && system.count > 1)
+                for (int i = 0; i < system.count; i++) sortingWorldPositions.Add(drawSpace.WorldPosition(system.particles[i]));
+            order.Sort(particleComparison ??= CompareParticles);
+        }
+        finally { sortingSystem = null; sortingWorldPositions.Clear(); }
+    }
     //排序期间相机姿态不变，比较器不重复读层级变换或创建闭包。
     private int CompareParticles(int a, int b)
     {
         var s = sortingSystem;
-        var x = s.particles[a]; var y = s.particles[b];
         return sortMode switch
         {
-            ParticleSystemSortMode.OldestInFront => x.elapsedAge.CompareTo(y.elapsedAge),
-            ParticleSystemSortMode.YoungestInFront => y.elapsedAge.CompareTo(x.elapsedAge),
-            ParticleSystemSortMode.Depth => Vector3.Dot(s.WorldPosition(y) - s.WorldPosition(x), sortingForward).CompareTo(0),
-            _ => (s.WorldPosition(y) - sortingPosition).sqrMagnitude.CompareTo((s.WorldPosition(x) - sortingPosition).sqrMagnitude)
+            ParticleSystemSortMode.OldestInFront => s.particles[a].elapsedAge.CompareTo(s.particles[b].elapsedAge),
+            ParticleSystemSortMode.YoungestInFront => s.particles[b].elapsedAge.CompareTo(s.particles[a].elapsedAge),
+            ParticleSystemSortMode.Depth => Vector3.Dot(sortingWorldPositions[b] - sortingWorldPositions[a], sortingForward).CompareTo(0),
+            _ => (sortingWorldPositions[b] - sortingPosition).sqrMagnitude.CompareTo((sortingWorldPositions[a] - sortingPosition).sqrMagnitude)
         };
     }
     private void AppendParticle(ParticleSystem s, ParticleSystem.Particle p, in ParticleCameraState cameraState, in ParticleSystem.DrawSpace drawSpace)
@@ -133,7 +142,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             SelectMesh(p);
             int offset = vertices.Count;
             // Shape-aligned particles already carry their emission orientation; other meshes obey Renderer alignment.
-            Quaternion orientation = p.alignedToDirection ? s.ParticleRotation(p) : BillboardAlignment(s, p, in cameraState, center);
+            Quaternion orientation = p.alignedToDirection ? s.ParticleRotation(p) : BillboardAlignment(s, in cameraState, center, streamVelocity);
             Matrix4x4 matrix = Matrix4x4.TRS(center, orientation * Quaternion.Euler(p.rotation3D), size);
             Matrix4x4 normalMatrix = matrix.inverse.transpose;
             bool flipMesh = ParticleSystem.Random(p.randomSeed, 82) < flip.z;
@@ -152,7 +161,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             foreach (int index in sourceTriangles) indices.Add(offset + index);
             return;
         }
-        BillboardAxes(s, p, in cameraState, center, size, out Vector3 x, out Vector3 y);
+        BillboardAxesPrepared(s, p, in cameraState, center, size, streamVelocity, out Vector3 x, out Vector3 y);
         streamNormal = -Vector3.Cross(x, y).normalized;
         Vector3 tangent = x.normalized;
         streamTangent = new Vector4(tangent.x, tangent.y, tangent.z, 1);
@@ -226,7 +235,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         }
         finally
         {
-            if (dpaToken.Start != 0) Diagnostics.DpaDiagnostics.EndSubmit(dpaToken, Time.frameCount, vertices.Count, indices.Count, dpaRoute);
+            if (dpaToken.Start != 0) Diagnostics.DpaDiagnostics.EndSubmit(dpaToken, UnityEngine.Time.frameCount, vertices.Count, indices.Count, dpaRoute);
         }
     }
 }

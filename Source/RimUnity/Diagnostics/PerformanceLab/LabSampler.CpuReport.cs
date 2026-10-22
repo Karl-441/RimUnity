@@ -14,7 +14,7 @@ internal sealed partial class LabSampler
         Enabled = cpu != null, Frames = cpu?.FrameCount ?? 0,
         ClockFrequency = System.Diagnostics.Stopwatch.Frequency,
         InvalidScopes = cpu?.InvalidScopes ?? 0, CrossThreadScopesSkipped = cpu?.CrossThreadScopes ?? 0,
-        Caveats = CpuCaveats, Stages = stages, BatchCounters = reasons, FrameWindows = LabCpuReport.Windows(cpu),
+        SnapshotCoverage = SnapshotCoverage(), Families = FamilyStages(), Caveats = CpuCaveats, Stages = stages, BatchCounters = reasons, FrameWindows = LabCpuReport.Windows(cpu),
         FrameWindowCaveats = "Disjoint timeline windows partition complete FrameEnqueued intervals; overlap source scopes, so never add them to stage times. EnqueueToPrePoll includes the preceding Observer callback, event tails and waits. Missing, partial or reordered boundaries are omitted, never reported as zero. BridgeToEnqueue covers host work after the bridge; it is not proof of a specific host subsystem's allocation.",
         FrameData = "*.stages.csv, *.batch.csv and *.windows.csv; keyed by frame in *.frames.csv"
     };
@@ -22,6 +22,9 @@ internal sealed partial class LabSampler
     private string CpuText(LabCpuReport.Stage[] stages, LabCpuReport.BatchCounter[] reasons)
     {
         var text = new StringBuilder("CPU 阶段测量：" + (cpu == null ? "关闭（对照采样）" : "开启") + "\n");
+        var coverage = SnapshotCoverage();
+        if (coverage != null)
+            text.AppendLine(FormattableString.Invariant($"快照覆盖：HDR {coverage.HdrCalls} 次 / {coverage.HdrCommands} 项；Bloom {coverage.BloomCalls} 次 / {coverage.BloomCommands} 项；Bloom 非空 {coverage.BloomNonemptyFrames}/{coverage.Frames} 帧；观测图层掩码 OR={coverage.BloomMask}。非空只证明 CPU 快照包含绘制项，不是 GPU 实际发光验证。"));
         long mainBytes = 0, observerBytes = 0; double observerMs = 0;
         for (int i = 0; i < count; i++)
         { mainBytes += samples[i].MainThreadAllocatedBytes; observerBytes += samples[i].ObserverAllocatedBytes; observerMs += samples[i].ObserverCpuMs; }
@@ -34,6 +37,9 @@ internal sealed partial class LabSampler
             text.AppendLine("stage\tcalls\tcalls/frame\tmean_incl_ms\tmean_self_ms\tp95_incl_ms\tp99_incl_ms\tp95_self_ms\tp99_self_ms\tmax_frame_ms\tmax_call_ms\tincl_B/frame\tself_B/frame\tvertices\tindices");
             foreach (var s in stages.OrderByDescending(s => s.MeanSelfMs))
                 text.AppendLine(FormattableString.Invariant($"{s.Name}\t{s.Calls}\t{s.CallsPerFrame:F3}\t{s.MeanInclusiveMs:F6}\t{s.MeanSelfMs:F6}\t{s.P95InclusiveMs:F6}\t{s.P99InclusiveMs:F6}\t{s.P95SelfMs:F6}\t{s.P99SelfMs:F6}\t{s.MaxFrameInclusiveMs:F6}\t{s.MaxCallMs:F6}\t{s.InclusiveBytesPerFrame:F1}\t{s.SelfBytesPerFrame:F1}\t{s.Vertices}\t{s.Indices}"));
+            text.AppendLine("混合场景类型归属（与上方阶段重叠，不可再次相加；仅初始注册系统，包含子发射器；延迟 Flush 不归属类型）：family\tname\tstage\tcalls\tmean_incl_ms/frame\tmean_self_ms/frame\tself_B/frame\tmax_call_ms");
+            foreach (var row in FamilyStages())
+                text.AppendLine(FormattableString.Invariant($"{row.Family}\t{row.Name}\t{row.Stage}\t{row.Calls}\t{row.MeanInclusiveMs:F6}\t{row.MeanSelfMs:F6}\t{row.SelfBytesPerFrame:F1}\t{row.MaxCallMs:F6}"));
             text.AppendLine("合批诊断：reason\tcount\tper_frame");
             foreach (var r in reasons) text.AppendLine(FormattableString.Invariant($"{r.Name}\t{r.Count}\t{r.PerFrame:F3}"));
             text.AppendLine("主线程互斥时间窗口（与上述阶段重叠，不能再次相加）：window\tcomplete_frames\tmean_ms\tp95_ms\tmax_ms\tB/frame");
@@ -45,17 +51,59 @@ internal sealed partial class LabSampler
     }
 
     // Long-form numeric rows avoid enormous repeated JSON objects. Export is outside sampling.
+    private sealed record Coverage(int Frames, long HdrCalls, long HdrCommands, long BloomCalls, long BloomCommands, int BloomNonemptyFrames, int BloomMask);
+    private sealed record FamilyStage(int Family, string Name, string Stage, long Calls, double MeanInclusiveMs, double MeanSelfMs, double SelfBytesPerFrame, double MaxCallMs);
+    private FamilyStage[] FamilyStages()
+    {
+        if (cpu == null) return Array.Empty<FamilyStage>();
+        var result = new System.Collections.Generic.List<FamilyStage>();
+        foreach (int family in Enumerable.Range(0, LabCpuMetrics.FamilyCount))
+            foreach (var stage in new[] { LabCpuStage.ParticleRenderer, LabCpuStage.ParticleGeometry, LabCpuStage.TrailGeometry,
+                LabCpuStage.ParticleAttributes, LabCpuStage.ParticleSort, LabCpuStage.SimulationSystemStep })
+            {
+                var metric = cpu.Family(family, stage);
+                if (metric.Calls == 0) continue;
+                double frames = Math.Max(1, cpu.FrameCount);
+                result.Add(new(family, LabStressScenario.Names[family], stage.ToString(), metric.Calls,
+                    LabCpuReport.Ms(metric.Ticks) / frames, LabCpuReport.Ms(metric.SelfTicks) / frames,
+                    metric.SelfBytes / frames, LabCpuReport.Ms(metric.MaxCallTicks)));
+            }
+        return result.ToArray();
+    }
+    private Coverage SnapshotCoverage()
+    {
+        if (cpu == null) return null;
+        long hdr = 0, commands = 0, bloom = 0, bloomCommands = 0; int nonempty = 0, mask = 0;
+        for (int f = 0; f < cpu.FrameCount; f++)
+        {
+            var value = cpu.GetSnapshot(f); hdr += value.HdrCalls; commands += value.HdrCommands;
+            bloom += value.BloomCalls; bloomCommands += value.BloomCommands; mask |= value.BloomMask;
+            if (value.BloomCommands > 0) nonempty++;
+        }
+        return new(cpu.FrameCount, hdr, commands, bloom, bloomCommands, nonempty, mask);
+    }
+
     private void WriteCpuFrames(string prefix, Encoding encoding)
     {
         if (cpu == null) return;
+        using (var families = new StreamWriter(prefix + ".families.csv", false, encoding))
+        {
+            families.WriteLine("family,name,stage,calls,mean_inclusive_ms_per_frame,mean_self_ms_per_frame,self_bytes_per_frame,max_call_ms");
+            foreach (var row in FamilyStages())
+                families.WriteLine(FormattableString.Invariant($"{row.Family},{row.Name},{row.Stage},{row.Calls},{row.MeanInclusiveMs:F6},{row.MeanSelfMs:F6},{row.SelfBytesPerFrame:F1},{row.MaxCallMs:F6}"));
+        }
         using var stages = new StreamWriter(prefix + ".stages.csv", false, encoding);
         using var batch = new StreamWriter(prefix + ".batch.csv", false, encoding);
         using var windows = new StreamWriter(prefix + ".windows.csv", false, encoding);
+        using var snapshots = new StreamWriter(prefix + ".snapshots.csv", false, encoding);
+        snapshots.WriteLine("frame,hdr_calls,hdr_commands,bloom_calls,bloom_commands,bloom_mask");
         stages.WriteLine("frame,stage,calls,inclusive_ms,self_ms,inclusive_bytes,self_bytes,max_call_ms,vertices,indices");
         batch.WriteLine("frame,reason,count");
         windows.WriteLine("frame,window,elapsed_ms,main_thread_allocated_bytes");
         for (int f = 0; f < cpu.FrameCount; f++)
         {
+            var capture = cpu.GetSnapshot(f);
+            snapshots.WriteLine(FormattableString.Invariant($"{f + 1},{capture.HdrCalls},{capture.HdrCommands},{capture.BloomCalls},{capture.BloomCommands},{capture.BloomMask}"));
             for (int s = 0; s < LabCpuMetrics.StageCount; s++)
             {
                 var m = cpu.Get(f, (LabCpuStage)s);

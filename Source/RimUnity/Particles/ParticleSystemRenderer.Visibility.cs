@@ -30,15 +30,23 @@ public sealed partial class ParticleSystemRenderer
     //绘制和裁剪共用此步骤，避免拉伸粒子或最小屏幕尺寸被低估。
     private void BillboardAxes(ParticleSystem s, ParticleSystem.Particle p, in ParticleCameraState cameraState, Vector3 center, Vector3 size,
         out Vector3 x, out Vector3 y)
+        => BillboardAxesPrepared(s, p, in cameraState, center, size,
+            alignment == ParticleSystemRenderSpace.Velocity || renderMode == ParticleSystemRenderMode.Stretch ? s.WorldVelocity(p) : default,
+            out x, out y);
+
+    // Rendering already evaluated this velocity for vertex streams. Visibility
+    // computes it once only when alignment/stretch actually needs it.
+    private void BillboardAxesPrepared(ParticleSystem s, ParticleSystem.Particle p, in ParticleCameraState cameraState, Vector3 center, Vector3 size,
+        Vector3 worldVelocity, out Vector3 x, out Vector3 y)
     {
-        Quaternion view = BillboardAlignment(s, p, in cameraState, center);
+        Quaternion view = BillboardAlignment(s, in cameraState, center, worldVelocity);
         Vector3 forward = cameraState.Forward;
         Vector3 right = view * Vector3.right, up = view * Vector3.up;
         if (renderMode == ParticleSystemRenderMode.HorizontalBillboard) { right = Vector3.right; up = Vector3.forward; }
         if (renderMode == ParticleSystemRenderMode.VerticalBillboard) { up = Vector3.up; right = Vector3.Cross(up, forward).normalized; }
         if (renderMode == ParticleSystemRenderMode.Stretch)
         {
-            Vector3 velocity = s.WorldVelocity(p);
+            Vector3 velocity = worldVelocity;
             up = velocity.sqrMagnitude > .000001f ? velocity.normalized : up;
             right = Vector3.Cross(up, forward).normalized;
             size.y = Mathf.Abs(size.y) * lengthScale + velocity.magnitude * velocityScale;

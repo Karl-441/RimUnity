@@ -14,6 +14,26 @@ internal sealed partial class LabWindow
     //并发数、频率与寿命共同决定实际密度，过载限流会在报告中明确记录。
     private void DrawControls(float width, float row, ref float y)
     {
+        if (DebugSettings.ShowDevGizmos)
+        {
+            const string preset = "一键建立 / 重建混合粒子压力场景";
+            float buttonHeight = Math.Max(row, Text.CalcHeight(preset, width - 16) + 12);
+            if (Widgets.ButtonText(new URect(0, y, width, buttonHeight), preset))
+            {
+                lab.StartMixedStress();
+                concurrency = lab.Concurrency; fixedInstances = lab.FixedInstances; warmup = lab.WarmupSeconds;
+                seconds = lab.SampleSeconds; radius = lab.Radius; scale = lab.Scale; rotationX = lab.RotationX;
+            }
+            y += buttonHeight + 8;
+            const string bloomLabel = "混合场景包含 Bloom（仅测试场生效）";
+            float bloomHeight = Math.Max(row, Text.CalcHeight(bloomLabel, width - 34) + 8);
+            bool bloom = lab.StressBloom;
+            Widgets.CheckboxLabeled(new URect(0, y, width, bloomHeight), bloomLabel, ref bloom);
+            if (bloom != lab.StressBloom) { lab.Sampler.Stop("改变测试场 Bloom", export: true); lab.StressBloom = bloom; }
+            y += bloomHeight + 8;
+
+            Label("内置混合 v2：12 组 × 4 实例，固定种子和位置，预热 12 秒后采样 60 秒。覆盖常见绘制、模拟空间、拖尾、曲线、噪声、图集、复杂顶点流及出生子发射器。粒子有固定上限，数量仍随周期及帧间隔小幅变化。", width, ref y);
+        }
         Label("勾选要测试的特效后应用参数。多项特效按列表顺序分配给实例；重新开始会清空旧实例。", width, ref y);
         float modeHeight = Math.Max(row, Text.CalcHeight("固定数量常驻循环（稳定负载）", width - 34) + 8);
         Widgets.CheckboxLabeled(new URect(0, y, width, modeHeight), "固定数量常驻循环（稳定负载）", ref fixedInstances);
@@ -40,12 +60,13 @@ internal sealed partial class LabWindow
             lab.Concurrency = (int)concurrency; lab.Rate = rate; lab.Lifetime = lifetime;
             lab.Radius = radius; lab.Scale = scale; lab.RotationX = rotationX; lab.SampleSeconds = (int)seconds;
             lab.FixedInstances = fixedInstances; lab.WarmupSeconds = warmup;
-            lab.StartPlayback();
+            lab.StartPlayback(mixedStress: lab.Scenario == LabStressScenario.Version);
         }
         y += row + 8;
         if (Widgets.ButtonText(new URect(0, y, width, row), "停止播放并清空实例"))
         { lab.Sampler.Stop("停止播放", export: true); lab.StopPlayback(); }
         y += row + 10;
+        Label("当前场景：" + lab.Scenario, width, ref y);
         Label(lab.Status, width, ref y);
         Label(lab.Sampler.Display, width, ref y);
     }

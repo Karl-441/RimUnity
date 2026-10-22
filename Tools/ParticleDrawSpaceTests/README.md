@@ -55,3 +55,20 @@ The suite also compares reordered zero-width attributes, duplicate UV (general
 path), layout replacement, explicit zero channels versus default custom passthrough,
 and the unprepared trail vertex path. Cold-fire layout benchmarks still use the
 fixture's generic module configuration, not the full cold-fire asset or game.
+
+
+`--mixed-stress` (fourth runtime argument, instead of a baseline path) checks all
+12 production LabStressScenario.Configure recipes using the actual runtime.
+It verifies explicit layouts/modules, clone-local Custom space, Birth graph,
+repeatable seeds, sustained bounded manual simulation and actual child emission.
+It supplies CPU fixture mesh/material inputs and does not validate shader creation,
+GPU appearance, window geometry or real map/camera transitions.
+
+
+`--trail-reuse <旧版RimUnity.dll>`：对照拖尾端点复用前后的真实运行时，覆盖 1620 种模式/空间/点数组合，逐项比较 9 个网格通道。随后用编译委托测量 256 条、每条 17 点的拖尾几何生成；预热后检查零分配。该测试不访问 GPU，也不代表整个游戏帧耗时。
+
+
+`--noise-reuse <优化前RimUnity.dll>`：逐位对照 Curl 噪声（各质量/种子/边界/六层累积），运行 72 种连续模拟及尺寸噪声对照，再测量 Curl 和四个噪声系统的显式推进。Curl 预热后零分配；完整显式推进允许 API 原有分配，但新旧必须一致。无 GPU 和整帧性能承诺。
+
+
+`--sort-reuse <优化前RimUnity.dll>`：比较空间/年龄排序的原始索引顺序、成功/异常清理，以及复用世界速度前后的所有网格输出通道和可见性轴。覆盖 675 种几何/可见性场景、810 种排序配置，各配置连续三次移动相机/变换。微基准计入坐标快照、索引填充和排序，预热后零分配；不测 GPU。

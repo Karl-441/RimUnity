@@ -13,7 +13,7 @@ internal static class LabHooks
 {
     private const string Id = "Chezhou.RimUnity.PerformanceLab";
     private static readonly Harmony patcher = new(Id);
-    private static MethodInfo capture, save;
+    private static MethodInfo capture, save, bloom;
     private static Map removingMap;
 
     //地图快照计数和临时地图存档保护共用会话生命周期。
@@ -24,6 +24,17 @@ internal static class LabHooks
         save = AccessTools.Method(typeof(GameDataSaveLoader), nameof(GameDataSaveLoader.SaveGame));
         patcher.Patch(save, prefix: new HarmonyMethod(typeof(LabHooks), nameof(BeforeSave)));
         patcher.Patch(capture, postfix: new HarmonyMethod(typeof(LabHooks), nameof(Captured)));
+        bloom = AccessTools.Method(typeof(Rendering.BloomSettings), "Snapshot");
+        patcher.Patch(bloom, postfix: new HarmonyMethod(typeof(LabHooks), nameof(OverrideBloom)));
+    }
+
+    // Session-only frame settings. Never take ownership of another mod's layer,
+    // and never write player settings or controls used by the normal map.
+    private static void OverrideBloom(ref Rendering.BloomFrame __result)
+    {
+        var lab = PerformanceLab.Current;
+        if (lab?.IsCurrent == true && lab.MixedStressActive)
+            __result = LabStressScenario.BloomSettings(__result, lab.StressBloom);
     }
 
     //采样停止后只保留存档保护，计数入口立即返回。
@@ -76,6 +87,7 @@ internal static class LabHooks
     {
         if (capture != null) patcher.Unpatch(capture, HarmonyPatchType.All, Id);
         if (save != null) patcher.Unpatch(save, HarmonyPatchType.All, Id);
-        capture = save = null;
+        if (bloom != null) patcher.Unpatch(bloom, HarmonyPatchType.All, Id);
+        capture = save = bloom = null;
     }
 }

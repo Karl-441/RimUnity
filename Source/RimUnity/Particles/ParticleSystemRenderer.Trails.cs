@@ -40,6 +40,12 @@ public sealed partial class ParticleSystemRenderer
             if (needsDistance && i > 0) totalDistance += Vector3.Distance(trailWorldPoints[i - 1], position);
             trailWorldPoints.Add(position); trailDistances.Add(totalDistance);
         }
+        // Shared segment endpoints have identical curve inputs. Carry the previous
+        // endpoint only within this draw; no state survives edits or another camera.
+        float previousWidth = module.widthOverTrail.Evaluate(0) * (ribbon ? points[0].width : trail.width) * .5f;
+        var first = points[0];
+        Color previousColor = (ribbon ? first.color : trail.color) * module.colorOverTrail.Evaluate(0)
+            * module.colorOverLifetime.Evaluate(float.IsPositiveInfinity(first.lifetime) ? 0 : 1 - first.remaining / first.lifetime);
         for (int i = 1; i < points.Count; i++)
         {
             var a = points[i - 1]; var b = points[i];
@@ -47,8 +53,8 @@ public sealed partial class ParticleSystemRenderer
             //按相机前向与轨迹方向生成横轴，让三角形正面朝向相机。
             Vector3 side = Vector3.Cross(forward, p1 - p0).normalized;
             float t0 = (i - 1f) / (points.Count - 1), t1 = i / (float)(points.Count - 1);
-            float width0 = module.widthOverTrail.Evaluate(t0) * (ribbon ? a.width : trail.width) * .5f, width1 = module.widthOverTrail.Evaluate(t1) * (ribbon ? b.width : trail.width) * .5f;
-            Color c0 = (ribbon ? a.color : trail.color) * module.colorOverTrail.Evaluate(t0) * module.colorOverLifetime.Evaluate(float.IsPositiveInfinity(a.lifetime) ? 0 : 1 - a.remaining / a.lifetime);
+            float width0 = previousWidth, width1 = module.widthOverTrail.Evaluate(t1) * (ribbon ? b.width : trail.width) * .5f;
+            Color c0 = previousColor;
             Color c1 = (ribbon ? b.color : trail.color) * module.colorOverTrail.Evaluate(t1) * module.colorOverLifetime.Evaluate(float.IsPositiveInfinity(b.lifetime) ? 0 : 1 - b.remaining / b.lifetime);
             float startDistance = trailDistances[i - 1], distance = trailDistances[i];
             float u0, u1;
@@ -63,6 +69,7 @@ public sealed partial class ParticleSystemRenderer
             int start = vertices.Count;
             Vertex(p0 - side * width0, new Vector2(u0, 0), c0); Vertex(p0 + side * width0, new Vector2(u0, 1), c0);
             Vertex(p1 + side * width1, new Vector2(u1, 1), c1); Vertex(p1 - side * width1, new Vector2(u1, 0), c1); Quad(start);
+            previousWidth = width1; previousColor = c1;
         }
     }
 }

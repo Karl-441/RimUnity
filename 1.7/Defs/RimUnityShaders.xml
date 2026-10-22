@@ -47,4 +47,10 @@
   <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_UIAdditive</defName><shaderProgram><vertexShaderFileName>RimUnity/UI.vert.glsl</vertexShaderFileName><depthTest>false</depthTest><blendDstFactor>One</blendDstFactor></shaderProgram></ShaderDef>
   <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_UIPremultiply</defName><shaderProgram><vertexShaderFileName>RimUnity/UI.vert.glsl</vertexShaderFileName><depthTest>false</depthTest><blendSrcFactor>One</blendSrcFactor></shaderProgram></ShaderDef>
   <ShaderDef ParentName="RimUnity_ParticleBase"><defName>RimUnity_WorldSDF</defName><shaderProgram><fragmentShaderFileName>RimUnity/SDF.frag.glsl</fragmentShaderFileName></shaderProgram></ShaderDef>
+  <!-- World particle capability: same color/UV/blend semantics, no UI storage bindings. -->
+  <ShaderDef Name="RimUnity_WorldParticleBase" Abstract="True" ParentName="RimUnity_ParticleBase">
+    <shaderProgram><fragmentShaderFileName>RimUnity/WorldParticle.frag.glsl</fragmentShaderFileName></shaderProgram>
+  </ShaderDef>
+  <ShaderDef ParentName="RimUnity_WorldParticleBase"><defName>RimUnity_WorldParticleAlpha</defName></ShaderDef>
+  <ShaderDef ParentName="RimUnity_WorldParticleBase"><defName>RimUnity_WorldParticleAdditive</defName><shaderProgram><blendDstFactor>One</blendDstFactor></shaderProgram></ShaderDef>
 </Defs>

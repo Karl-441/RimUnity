@@ -70,6 +70,7 @@ public sealed partial class ParticleSystem
                 foreach (ParticleSystem system in systems)
                 {
                     if (activeOnly && !system.isActiveAndEnabled) continue;
+                    using var systemCpu = Diagnostics.LabCpuMetrics.MeasureSystem(Diagnostics.LabCpuStage.SimulationSystemStep, system.GetInstanceID());
                     if (system.collision.enabled || system.trigger.enabled)
                         ParticlePhysicsWorld.PrepareSimulation(system.collision.enabled && system.collision.type != ParticleSystemCollisionType.Planes);
                     system.Step(system.currentStepDelta, Vector3.Lerp(system.frameFrom, system.frameTo, step / (float)steps),

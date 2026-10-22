@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Threading;
+using System.Collections.Generic;
 
 namespace RimUnity.Diagnostics;
 
@@ -12,7 +13,7 @@ internal enum LabCpuStage
     ParticleGeometry, TrailGeometry, SpriteMaterial, ParticleSubmit, SubmitUI,
     MeshFill, DiagnosticCapture, DrawMesh, BatchAttempt, BatchGeometry, BatchFlush,
     HdrSnapshot, BloomSnapshot, SimulationSchedule, SimulationAdvance, SimulationEvents,
-    ParticleAttributes, Count
+    ParticleAttributes, SimulationSystemStep, Count
 }
 
 internal enum LabFrameWindow { EnqueueToPrePoll, PrePollToBridge, Bridge, BridgeToEnqueue, Count }
@@ -42,6 +43,7 @@ internal sealed class LabCpuMetrics
     private struct Entry
     {
         internal LabCpuStage Stage;
+        internal int Family;
         internal long Start, Allocated, ChildTicks, ChildBytes, Serial;
     }
     internal const int StageCount = (int)LabCpuStage.Count, ReasonCount = (int)LabBatchReason.Count;
@@ -50,9 +52,18 @@ internal sealed class LabCpuMetrics
     private readonly int thread = Environment.CurrentManagedThreadId;
     private readonly Entry[] stack = new Entry[StackCapacity];
     private readonly Metric[] pending = new Metric[StageCount];
+    // Numeric identities only; registered before the sample starts. Family totals
+    // contain completed frames only and do not retain scene objects or per-frame rows.
+    internal const int FamilyCount = 12;
+    private readonly Dictionary<int, int> systemFamilies = new();
+    private readonly Metric[] pendingFamilies = new Metric[FamilyCount * StageCount];
+    private readonly Metric[] familyTotals = new Metric[FamilyCount * StageCount];
     private readonly long[] reasons = new long[ReasonCount];
     private readonly Metric[] frames;
     private readonly long[] frameReasons;
+    internal readonly record struct SnapshotWork(long HdrCalls, long HdrCommands, long BloomCalls, long BloomCommands, int BloomMask);
+    private SnapshotWork pendingSnapshot;
+    private readonly SnapshotWork[] snapshotFrames;
     internal readonly record struct Window(long Ticks, long Bytes);
     private readonly Window[] frameWindows;
     private readonly bool[] validWindows;
@@ -70,6 +81,7 @@ internal sealed class LabCpuMetrics
     {
         frames = new Metric[checked(capacity * StageCount)];
         frameReasons = new long[checked(capacity * ReasonCount)];
+        snapshotFrames = new SnapshotWork[capacity];
         frameWindows = new Window[checked(capacity * (int)LabFrameWindow.Count)];
         validWindows = new bool[capacity];
     }
@@ -85,9 +97,20 @@ internal sealed class LabCpuMetrics
         stopped = true;
         // Unfinished tail scopes do not enter completed frame statistics.
         if (depth != 0) { InvalidScopes += depth; depth = 0; }
-        Array.Clear(pending); Array.Clear(reasons);
+        Array.Clear(pending); Array.Clear(pendingFamilies); systemFamilies.Clear(); Array.Clear(reasons); pendingSnapshot = default;
     }
+    internal void RegisterSystem(int instanceId, int family)
+    {
+        if (stopped || ReferenceEquals(current, this) || Environment.CurrentManagedThreadId != thread)
+            throw new InvalidOperationException("Register diagnostic identities before capture starts.");
+        if ((uint)family < FamilyCount && systemFamilies.Count < 1024) systemFamilies[instanceId] = family;
+    }
+    internal Metric Family(int family, LabCpuStage stage) => familyTotals[family * StageCount + (int)stage];
     internal static Scope Measure(LabCpuStage stage)
+        => Begin(stage, 0, false);
+    internal static Scope MeasureSystem(LabCpuStage stage, int instanceId)
+        => Begin(stage, instanceId, true);
+    private static Scope Begin(LabCpuStage stage, int instanceId, bool identifySystem)
     {
         var capture = current;
         if (capture == null) return default;
@@ -95,8 +118,10 @@ internal sealed class LabCpuMetrics
         { Interlocked.Increment(ref capture.crossThreadScopes); return default; }
         if (capture.depth == StackCapacity) { capture.InvalidScopes++; return default; }
         int slot = capture.depth++;
+        int family = slot > 0 ? capture.stack[slot - 1].Family : -1;
+        if (identifySystem) family = capture.systemFamilies.TryGetValue(instanceId, out int registered) ? registered : -1;
         long id = ++capture.serial;
-        capture.stack[slot] = new Entry { Stage = stage, Serial = id,
+        capture.stack[slot] = new Entry { Stage = stage, Serial = id, Family = family,
             Allocated = GC.GetAllocatedBytesForCurrentThread(), Start = Stopwatch.GetTimestamp() };
         return new Scope(capture, slot, id);
     }
@@ -122,6 +147,14 @@ internal sealed class LabCpuMetrics
         metric.SelfTicks += Math.Max(0, ticks - entry.ChildTicks);
         metric.SelfBytes += Math.Max(0, bytes - entry.ChildBytes);
         metric.MaxCallTicks = Math.Max(metric.MaxCallTicks, ticks);
+        if (entry.Family >= 0)
+        {
+            ref var family = ref pendingFamilies[entry.Family * StageCount + (int)entry.Stage];
+            family.Calls++; family.Ticks += ticks; family.Bytes += bytes;
+            family.SelfTicks += Math.Max(0, ticks - entry.ChildTicks);
+            family.SelfBytes += Math.Max(0, bytes - entry.ChildBytes);
+            family.MaxCallTicks = Math.Max(family.MaxCallTicks, ticks);
+        }
         depth--;
         if (depth > 0) { stack[depth - 1].ChildTicks += ticks; stack[depth - 1].ChildBytes += bytes; }
     }
@@ -161,8 +194,29 @@ internal sealed class LabCpuMetrics
         prePollVisits = bridgeVisits = 0;
         Array.Copy(pending, 0, frames, FrameCount * StageCount, StageCount);
         Array.Copy(reasons, 0, frameReasons, FrameCount * ReasonCount, ReasonCount);
+        for (int i = 0; i < familyTotals.Length; i++)
+        {
+            ref var target = ref familyTotals[i]; ref var source = ref pendingFamilies[i];
+            target.Calls += source.Calls; target.Ticks += source.Ticks; target.SelfTicks += source.SelfTicks;
+            target.Bytes += source.Bytes; target.SelfBytes += source.SelfBytes;
+            target.MaxCallTicks = Math.Max(target.MaxCallTicks, source.MaxCallTicks);
+        }
+        Array.Clear(pendingFamilies);
+        snapshotFrames[FrameCount] = pendingSnapshot; pendingSnapshot = default;
         Array.Clear(pending); Array.Clear(reasons); FrameCount++;
     }
+    // Numeric successful snapshot coverage only. Absent captures remain distinct from
+    // empty captures; no draw/material references survive the constructor.
+    internal static void RecordSnapshot(bool bloom, int commands, int mask)
+    {
+        var capture = current;
+        if (capture == null || Environment.CurrentManagedThreadId != capture.thread) return;
+        var previous = capture.pendingSnapshot;
+        capture.pendingSnapshot = bloom
+            ? previous with { BloomCalls = previous.BloomCalls + 1, BloomCommands = previous.BloomCommands + commands, BloomMask = previous.BloomMask | mask }
+            : previous with { HdrCalls = previous.HdrCalls + 1, HdrCommands = previous.HdrCommands + commands };
+    }
+    internal SnapshotWork GetSnapshot(int frame) => snapshotFrames[frame];
     internal Metric Get(int frame, LabCpuStage stage) => frames[frame * StageCount + (int)stage];
     internal long Reason(int frame, LabBatchReason reason) => frameReasons[frame * ReasonCount + (int)reason];
     internal bool HasWindows(int frame) => validWindows[frame];

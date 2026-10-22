@@ -7,8 +7,8 @@ using System.Threading;
 namespace RimUnity.Diagnostics;
 
 // Optional DPA bridge, accessed through cached delegates. Only numbers survive a capture.
-// Counters are session-wide; bounded submit records are cleared on reset/disable/shutdown.
-internal static class DpaDiagnostics
+// Counters are session-wide; reset clears records, disable invalidates in-flight tokens.
+internal static partial class DpaDiagnostics
 {
     private static volatile bool enabled;
     private static int generation;
@@ -32,6 +32,7 @@ internal static class DpaDiagnostics
             Interlocked.Increment(ref generation);
             for (int i = 0; i < counters.Length; i++) Interlocked.Exchange(ref counters[i], 0);
             Array.Clear(slowest);
+            ResetHdr();
         }
     }
     internal static void Binding(bool bloom, int reason)
@@ -58,6 +59,7 @@ internal static class DpaDiagnostics
     }
     internal static void AppendReport(StringBuilder text)
     {
+        AppendHdrReport(text);
         text.AppendLine("HDR BINDING REUSE (optional DPA session counters; HDR/Bloom separated)");
         text.AppendLine("enabled=" + enabled + "; new allocations include caller-owned binding objects, not just constructor body bytes");
         text.AppendLine("snapshot\treused\tnew_identity\tsame_identity_exhausted\tworkspace_created\tworkspace_oversize_discarded");
@@ -67,7 +69,7 @@ internal static class DpaDiagnostics
             for (int i = 0; i < 5; i++) text.Append('\t').Append(Interlocked.Read(ref counters[role * 5 + i]));
             text.AppendLine();
         }
-        text.AppendLine("SLOWEST PARTICLE SUBMITS (8 calls; CPU incl. profiling overhead; not GPU duration)");
+        text.AppendLine("SLOWEST PARTICLE SUBMITS (frame clock=UnityEngine.Time.frameCount; 8 calls; CPU incl. profiling overhead; not GPU duration)");
         text.AppendLine("frame\tcpu_ms\tvertices\tindices\troute\tbatch_result");
         lock (gate)
             foreach (var r in slowest)

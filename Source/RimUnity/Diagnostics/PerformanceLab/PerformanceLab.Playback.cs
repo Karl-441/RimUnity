@@ -29,19 +29,70 @@ internal sealed partial class PerformanceLab
     private int cursor;
     private double due;
     private SpikeCaptureData detailedCapture;
+    private LabStressScenario stress;
+    internal bool StressBloom = true;
+    internal bool MixedStressActive => stress != null;
+    internal string Scenario => stress == null ? "selected-prefabs" : LabStressScenario.Version;
+    internal string[] ActiveEffects => sequence.Select(e => e.Key).ToArray();
+    internal Dictionary<string, int> FixedDistribution
+    {
+        get
+        {
+            var result = new Dictionary<string, int>();
+            if (!Playing || !FixedInstances || sequence.Count == 0) return result;
+            for (int i = 0; i < sequence.Count; i++)
+            {
+                int count = Concurrency / sequence.Count + (i < Concurrency % sequence.Count ? 1 : 0);
+                result.TryGetValue(sequence[i].Key, out int prior); result[sequence[i].Key] = prior + count;
+            }
+            return result;
+        }
+    }
+    internal void StartMixedStress()
+    {
+        // Bypasses authored emission limits only inside the developer test map.
+        if (!IsCurrent || !DebugSettings.ShowDevGizmos) return;
+        Concurrency = LabStressScenario.Families * LabStressScenario.Copies;
+        FixedInstances = true; WarmupSeconds = 12; SampleSeconds = 60;
+        Radius = 14; Scale = 1; RotationX = 0; Rate = 16; Lifetime = 4;
+        CameraJumper.TryJump(Map.Center, Map, CameraJumper.MovementMode.Cut);
+        Find.CameraDriver.SetRootSize(24f);
+        StartPlayback(mixedStress: true);
+    }
     private static double Now => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
     //每个实例保留组件列表，采样时不重新搜索整个对象树。
-    private readonly record struct LiveEffect(GameObject Root, ParticleSystem[] Systems, double Expires);
+    private readonly record struct LiveEffect(GameObject Root, ParticleSystem[] Systems, double Expires, int Family);
+
+    internal void RegisterCpuFamilies(LabCpuMetrics capture)
+    {
+        if (capture == null) return;
+        foreach (var effect in live)
+            if (effect.Family >= 0)
+                foreach (var system in effect.Systems)
+                    if (system != null) capture.RegisterSystem(system.GetInstanceID(), effect.Family);
+    }
 
     //选择或参数变更后重新开始，报告中的条件不会混杂。
-    internal void StartPlayback()
+    internal void StartPlayback(bool mixedStress = false)
     {
+        if (mixedStress && (!IsCurrent || !DebugSettings.ShowDevGizmos)) return;
         Sampler.Stop("重新开始播放", export: true);
         StopPlayback();
-        sequence.Clear(); sequence.AddRange(Effects.Where(e => e.Selected));
+        sequence.Clear();
+        if (mixedStress)
+        {
+            try
+            {
+                stress = new LabStressScenario();
+                for (int i = 0; i < LabStressScenario.Families; i++)
+                    sequence.Add(new LabEffect { StressKind = i, Systems = i == 11 ? 2 : 1 });
+            }
+            catch (Exception ex) { stress?.Dispose(); stress = null; sequence.Clear(); Status = "混合场景创建失败：" + ex.Message; Log.Error("[RimUnity] " + ex); return; }
+        }
+        else sequence.AddRange(Effects.Where(e => e.Selected));
         if (sequence.Count == 0) { Status = "请先在特效列表勾选至少一个特效。"; return; }
-        if (FixedInstances && sequence.Count > Concurrency) { Status = "固定实例总数少于选中特效数，请增加实例数或减少勾选。"; return; }
+        if (FixedInstances && sequence.Count > Concurrency) { StopPlayback(); Status = "固定实例总数少于选中特效数，请增加实例数或减少勾选。"; return; }
         cursor = Spawned = ThrottledFrames = 0;
         random = new System.Random(9413);
         due = Now; Playing = true;
@@ -58,6 +109,7 @@ internal sealed partial class PerformanceLab
         sampleAfterWarmup = false; warmupUntil = double.PositiveInfinity;
         foreach (var effect in live) if (effect.Root != null) RimUnity.Object.DestroyImmediate(effect.Root);
         live.Clear(); sequence.Clear();
+        stress?.Dispose(); stress = null;
     }
 
     //每帧最多新建 16 个实例，低帧率时不无限追赶积欠发射；限流次数写入报告。
@@ -66,6 +118,10 @@ internal sealed partial class PerformanceLab
         if (!IsCurrent) { Close(); return; }
         try
         {
+            if (stress != null && !DebugSettings.ShowDevGizmos)
+            {
+                Sampler.Stop("关闭开发权限", export: true); StopPlayback(); Status = "混合压力场景已清空：开发权限已关闭。"; return;
+            }
             double now = Now;
             for (int i = live.Count - 1; i >= 0; i--)
             {
@@ -123,10 +179,10 @@ internal sealed partial class PerformanceLab
         GameObject root = null;
         try
         {
-            var template = PrefabLoader.Load(effect.Mod, effect.Path);
+            var template = effect.StressKind < 0 ? PrefabLoader.Load(effect.Mod, effect.Path) : null;
             using (NativeRuntime.DeferLifecycle())
             {
-                root = RimUnity.Object.Instantiate(template);
+                root = effect.StressKind >= 0 ? stress.Create(effect.StressKind) : RimUnity.Object.Instantiate(template);
                 root.SetActive(false);
                 int instance = Spawned;
                 double angle = FixedInstances ? instance * 2.399963229728653 : random.NextDouble() * Math.PI * 2;
@@ -140,7 +196,7 @@ internal sealed partial class PerformanceLab
                 if (FixedInstances) ConfigureFixedSystems(systems, instance);
                 foreach (var system in systems) { system.main.useUnscaledTime = true; system.main.playOnAwake = true; }
                 root.SetActive(true);
-                live.Add(new LiveEffect(root, systems, FixedInstances ? double.PositiveInfinity : now + Lifetime));
+                live.Add(new LiveEffect(root, systems, FixedInstances ? double.PositiveInfinity : now + Lifetime, effect.StressKind));
             }
             Spawned++;
         }

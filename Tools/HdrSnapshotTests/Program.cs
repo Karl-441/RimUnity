@@ -224,6 +224,8 @@ internal static class Program
         }
         var report = new System.Text.StringBuilder(); RimUnity.Diagnostics.DpaDiagnostics.AppendReport(report);
         Check(report.ToString().Contains("HDR\t350\t0\t0"), "diagnostics distinguish reuse without new identities");
+        Check(report.ToString().Contains("HDR\t100\t0\t350\t0\t350\t350\t"), "snapshot work counts match actual input/commands/unique bindings");
+        Check(report.ToString().Contains("HDR\tCommandCopy\t350\t") && report.ToString().Contains("HDR\tFilterDynamic\t100\t"), "HDR stage counts match snapshot processing");
         //Separate source objects may intentionally share immutable IDs but have different texture data.
         var duplicate = MakeBinding(301, shader);
         var duplicateDraw = MakeDraw(duplicate, 9, 0, 29);
@@ -297,6 +299,8 @@ internal static class Program
         HdrDrawFrame.ClearWorkspaces();
         using var source = Source();
         var warm = new HdrDrawFrame(source); object workspace = Work(warm); warm.Dispose();
+        RimUnity.Diagnostics.DpaDiagnostics.SetEnabled(true);
+        RimUnity.Diagnostics.DpaDiagnostics.Reset();
         LinearShaderVariants.FailOnCall = 3;
         Throws(() => new HdrDrawFrame(source), "partial clone failure propagates");
         Check(PoolCount() == 1 && Cleared(workspace), "partial clone failure returns clean workspace");
@@ -306,6 +310,14 @@ internal static class Program
         source.Draws.RemoveAt(source.Draws.Count - 1);
         Check(PoolCount() == 1 && Cleared(workspace), "early filter failure returns clean workspace");
         Throws(() => new HdrDrawFrame(null), "null source rejected before lease acquisition");
+        var errors = new System.Text.StringBuilder(); RimUnity.Diagnostics.DpaDiagnostics.AppendReport(errors);
+        Check(errors.ToString().Contains("HDR\t2\t2\t"), "failed filtering/binding snapshots are recorded without swallowing exceptions");
+        RimUnity.Diagnostics.DpaDiagnostics.Reset();
+        var late = new RimUnity.Diagnostics.DpaDiagnostics.HdrCapture(false); var lateToken = late.Begin();
+        RimUnity.Diagnostics.DpaDiagnostics.Reset(); late.End(RimUnity.Diagnostics.DpaDiagnostics.HdrStage.CommandCopy, lateToken); late.Complete(true);
+        errors.Clear(); RimUnity.Diagnostics.DpaDiagnostics.AppendReport(errors);
+        Check(errors.ToString().Contains("HDR\t0\t0\t0\t0\t0\t0\t0"), "reset rejects old in-flight snapshot diagnostics");
+        RimUnity.Diagnostics.DpaDiagnostics.SetEnabled(false);
         using var good = new HdrDrawFrame(source);
         Check(good.Frame.Draws.Count > 0, "pool remains usable after failed constructors");
     }
@@ -369,6 +381,12 @@ internal static class Program
         var previous = previousRuns.OrderBy(r => r.us).ElementAt(1); var next = nextRuns.OrderBy(r => r.us).ElementAt(1);
         Console.WriteLine($"Two snapshots / synthetic frame: baseline={old.bytes:F0} B, {old.us:F3} us; optimized={next.bytes:F0} B, {next.us:F3} us; allocation reduction={1 - next.bytes / old.bytes:P2}.");
         Console.WriteLine($"Previous deployed Round2={previous.bytes:F0} B, {previous.us:F3} us; command buffers={next.us:F3} us; CPU reduction vs Round2={1 - next.us / previous.us:P2} (median of 3 matched runs, construction + disposal, no DPA probes).");
+        RimUnity.Diagnostics.DpaDiagnostics.SetEnabled(true); RimUnity.Diagnostics.DpaDiagnostics.Reset();
+        for (int i = 0; i < 100; i++) optimized();
+        var instrumented = Measure(optimized);
+        Check(instrumented.bytes == next.bytes, "HDR stage capture adds no warmed managed allocation");
+        Console.WriteLine($"HDR source timers: disabled={next.us:F3} us, enabled={instrumented.us:F3} us per two snapshots; {instrumented.bytes:F0} B/frame including snapshot shells. Synthetic only, no Harmony.");
+        RimUnity.Diagnostics.DpaDiagnostics.SetEnabled(false);
         Check(next.bytes <= old.bytes * .1, "warm snapshot allocation reduced by at least 90% in matched synthetic scene");
     }
     private static (double bytes, double us, double p95) Measure(Action action)

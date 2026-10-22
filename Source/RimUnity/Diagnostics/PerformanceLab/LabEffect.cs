@@ -16,9 +16,10 @@ internal sealed class LabEffect
     internal int Systems;
     internal string[] Warnings = Array.Empty<string>();
     internal bool Selected = true;
+    internal int StressKind = -1;
     private string key;
-    internal string Key => key ??= Mod.PackageIdPlayerFacing + "/" + Path;
-    internal string Label => Mod.Name + " / " + Path;
+    internal string Key => key ??= StressKind >= 0 ? LabStressScenario.Version + "/" + StressKind : Mod.PackageIdPlayerFacing + "/" + Path;
+    internal string Label => StressKind >= 0 ? "内置压力组 / " + LabStressScenario.Names[StressKind] : Mod.Name + " / " + Path;
 
     //只收录导出清单中确实包含粒子系统的预制体。
     internal static List<LabEffect> Discover()

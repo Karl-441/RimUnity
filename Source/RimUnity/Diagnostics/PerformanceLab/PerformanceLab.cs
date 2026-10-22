@@ -16,6 +16,7 @@ internal sealed partial class PerformanceLab
     private readonly Game game;
     private readonly Map returnMap;
     private readonly TimeSpeed previousSpeed;
+    private readonly float previousCameraSize;
     private readonly EngineApplication application;
     private PocketMapParent parent;
     private bool closing;
@@ -31,7 +32,7 @@ internal sealed partial class PerformanceLab
     private PerformanceLab()
     {
         game = Verse.Current.Game; returnMap = Find.CurrentMap;
-        previousSpeed = Find.TickManager.CurTimeSpeed;
+        previousSpeed = Find.TickManager.CurTimeSpeed; previousCameraSize = Find.CameraDriver.RootSize;
         application = EngineApplication.Instance;
     }
 
@@ -47,7 +48,6 @@ internal sealed partial class PerformanceLab
             try
             {
                 session.Effects = LabEffect.Discover();
-                if (session.Effects.Count == 0) throw new InvalidOperationException("已启用模组没有可测试的粒子预制体。请先导入含 ParticleSystem 的特效。");
                 Find.TickManager.Pause();
                 session.parent = (PocketMapParent)WorldObjectMaker.MakeWorldObject(WorldObjectDefOf.PocketMap);
                 session.parent.sourceMap = session.returnMap;
@@ -136,7 +136,7 @@ internal sealed partial class PerformanceLab
             {
                 LabHooks.Remove();
                 Current = null;
-                if (removeMap && Verse.Current.Game == game) Find.TickManager.CurTimeSpeed = previousSpeed;
+                if (removeMap && Verse.Current.Game == game) { Find.TickManager.CurTimeSpeed = previousSpeed; Find.CameraDriver.SetRootSize(previousCameraSize); }
                 Sampler?.Dispose();
                 Map = null; parent = null;
             }

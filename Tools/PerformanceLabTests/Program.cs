@@ -46,6 +46,25 @@ class Program
         Check(legacy.Sampler.Starts == 1 && legacy.Spawned > first, "legacy create/destroy workload still replaces expired instances"); legacy.StopPlayback();
         var selection = Lab(); selection.Effects.Clear(); selection.StartPlayback(); Check(!selection.Playing, "empty selection rejected");
         selection.Effects.Add(new()); selection.Effects.Add(new()); selection.Concurrency = 1; selection.StartPlayback(); Check(!selection.Playing, "all selected effects must fit fixed scene");
+        var mixed = Lab(); mixed.StartMixedStress(); Fill(mixed);
+        Check(mixed.Concurrency == 48 && mixed.LiveCount == 48 && LabStressScenario.Creates == 48, "one-click mixed profile uses bounded 12x4 roots");
+        Check(mixed.Scenario == LabStressScenario.Version && mixed.ActiveEffects.Length == 12, "mixed metadata reflects active groups");
+        Check(mixed.FixedDistribution.Count == 12 && mixed.FixedDistribution.Values.All(n => n == 4), "report distribution matches actual mixed root allocation");
+        var familyCapture = new LabCpuMetrics(); mixed.RegisterCpuFamilies(familyCapture);
+        Check(familyCapture.Entries.Count == 96 && familyCapture.Entries.GroupBy(e => e.Family).Count() == 12
+            && familyCapture.Entries.GroupBy(e => e.Family).All(g => g.Count() == 8), "all initial roots and child systems register their explicit recipe family");
+        int count = LabStressScenario.Creates, disposals = LabStressScenario.Disposals;
+        for (int i = 0; i < 1000; i++) Update(mixed);
+        Check(LabStressScenario.Creates == count, "stable mixed profile does not rebuild roots");
+        mixed.StartMixedStress(); Fill(mixed);
+        Check(LabStressScenario.Disposals == disposals + 1 && mixed.LiveCount == 48, "rebuild releases previous session resources");
+        Verse.DebugSettings.ShowDevGizmos = false; count = LabStressScenario.Creates;
+        mixed.StartMixedStress(); Check(LabStressScenario.Creates == count && mixed.LiveCount == 48, "revoked debug permission cannot rebuild preset");
+        Update(mixed); Check(mixed.LiveCount == 0 && !mixed.Playing, "revoked permission stops mixed load on next update");
+        Verse.DebugSettings.ShowDevGizmos = true; mixed.StopPlayback();
+        Check(mixed.LiveCount == 0 && mixed.Scenario == "selected-prefabs", "stop clears mixed resources and metadata");
+        familyCapture = new LabCpuMetrics(); mixed.RegisterCpuFamilies(familyCapture);
+        Check(familyCapture.Entries.Count == 0, "stopped session registers no stale systems");
         Console.WriteLine($"PASS: {assertions} fixed-scene lifecycle assertions (production playback, fake prefab/lifecycle APIs; no game/GPU).");
     }
 }
@@ -63,7 +82,12 @@ namespace RimUnity.Diagnostics
         internal void Close() { Sampler.Stop("close", false); StopPlayback(); }
     }
     internal class FakeMap { internal Vector3 Center = new(48, 0, 48); }
-    internal class LabEffect { internal bool Selected = true; internal object Mod; internal string Path = "fixture", Key = "fixture", Label = "fixture"; }
+    internal sealed class LabCpuMetrics
+    {
+        internal readonly List<(int Id, int Family)> Entries = new();
+        internal void RegisterSystem(int id, int family) => Entries.Add((id, family));
+    }
+    internal class LabEffect { internal bool Selected = true; internal object Mod; internal string Path = "fixture", Label = "fixture"; internal string Key => StressKind >= 0 ? "mixed-particles-v2/" + StressKind : "fixture"; internal int StressKind = -1, Systems; }
     internal class LabSampler(PerformanceLab lab)
     {
         internal bool Sampling; internal int Starts, StartCount;
@@ -71,10 +95,18 @@ namespace RimUnity.Diagnostics
         internal void Start(int seconds) { Sampling = true; Starts++; StartCount = lab.LiveCount; }
         internal void RecordSpawn(string key, double ms, long bytes) { }
     }
+    internal class LabStressScenario : IDisposable
+    {
+        internal const int Families = 12, Copies = 4;
+        internal const string Version = "mixed-particles-v2";
+        internal static int Disposals, Creates;
+        internal GameObject Create(int kind) { Creates++; return RimUnity.Object.Instantiate(null); }
+        public void Dispose() { Disposals++; }
+    }
     internal class SpikeCaptureData { }
     internal static class ParticleSpikeCapture { internal static SpikeCaptureData BeginLabCapture() => null; }
 }
-namespace Verse { internal static class Log { internal static void Error(string value) { } } }
+namespace Verse { internal static class DebugSettings { internal static bool ShowDevGizmos = true; } internal static class Log { internal static void Error(string value) { } } }
 namespace RimUnity.Runtime
 {
     internal static class NativeRuntime
@@ -111,6 +143,7 @@ namespace RimUnity
     }
     internal class ParticleSystem
     {
+        internal int GetInstanceID() => GetHashCode();
         internal bool isActiveAndEnabled = true, useAutoRandomSeed = true;
         internal uint randomSeed = 1; internal int particleCount;
         internal MainModule main = new(); internal SubModule subEmitters = new();
@@ -121,4 +154,10 @@ namespace RimUnity
     internal class Transform { internal Vector3 position, localScale = new(1, 1, 1); internal Quaternion rotation; }
     internal readonly record struct Vector3(float x, float y, float z) { public static Vector3 operator *(Vector3 v, float k) => new(v.x*k, v.y*k, v.z*k); }
     internal struct Quaternion { internal static Quaternion Euler(float x, float y, float z) => default; public static Quaternion operator *(Quaternion a, Quaternion b) => default; }
+}
+
+namespace Verse
+{
+    internal static class CameraJumper { internal enum MovementMode { Cut } internal static void TryJump(object cell, object map, MovementMode mode) { } }
+    internal static class Find { internal static readonly Driver CameraDriver = new(); internal class Driver { internal void SetRootSize(float value) { } } }
 }
