@@ -73,12 +73,18 @@ public sealed partial class ParticleSystem
         }
     }
     //无限寿命保持曲线起点；有限寿命仍尊重脚本对粒子快照剩余时间的修改。
-    internal static float Age(Particle p) => p.startLifetime > 0
+    internal static float Age(in Particle p) => p.startLifetime > 0
         ? float.IsPositiveInfinity(p.startLifetime) ? 0 : Mathf.Clamp01(1 - p.remainingLifetime / p.startLifetime) : 1;
-    internal Color ColorAt(Particle p) => (Color)p.startColor * (colorOverLifetime.enabled ? colorOverLifetime.color.Evaluate(Age(p), Random(p.randomSeed, 30)) : Color.white)
-        * (colorBySpeed.enabled ? colorBySpeed.color.Evaluate(SpeedPhase(p, colorBySpeed.range), Random(p.randomSeed, 32)) : Color.white);
-    internal Vector3 SizeAt(Particle p)
+    internal Color ColorAt(in Particle p)
     {
+        // Color32 conversion is finite; multiplying by white twice cannot change it.
+        if (!colorOverLifetime.enabled && !colorBySpeed.enabled) return p.startColor;
+        return (Color)p.startColor * (colorOverLifetime.enabled ? colorOverLifetime.color.Evaluate(Age(p), Random(p.randomSeed, 30)) : Color.white)
+            * (colorBySpeed.enabled ? colorBySpeed.color.Evaluate(SpeedPhase(p, colorBySpeed.range), Random(p.randomSeed, 32)) : Color.white);
+    }
+    internal Vector3 SizeAt(in Particle p)
+    {
+        if (!sizeOverLifetime.enabled && !sizeBySpeed.enabled && !noise.enabled) return p.startSize3D;
         float age = Age(p), r = Random(p.randomSeed, 31);
         Vector3 size = p.startSize3D;
         if (sizeOverLifetime.enabled)

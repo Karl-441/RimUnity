@@ -39,7 +39,7 @@ public sealed partial class ParticleSystem
         var values = customOverrides[(int)stream]; values.Clear();
         for (int i = 0; i < count; i++) values[particles[i].identity] = source[i];
     }
-    internal Vector4 CustomAt(Particle p, int channel)
+    internal Vector4 CustomAt(in Particle p, int channel)
     {
         if (customOverrides[channel].TryGetValue(p.identity, out var value)) return value;
         if (!customData.enabled) return default;

@@ -95,7 +95,7 @@ internal static class NoiseReuseChecks
         finally { foreach (var rig in old.Concat(current)) rig.Dispose(); }
     }
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-    private static void Simulation(Assembly baseline)
+    internal static void Simulation(Assembly baseline)
     {
         RimUnity.Runtime.NativeRuntime.InitializeOnCurrentThread();
         int cases = 0, particles = 0;
