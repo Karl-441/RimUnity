@@ -36,7 +36,7 @@ public sealed partial class ParticleSystemRenderer
 
     // Rendering already evaluated this velocity for vertex streams. Visibility
     // computes it once only when alignment/stretch actually needs it.
-    private void BillboardAxesPrepared(ParticleSystem s, ParticleSystem.Particle p, in ParticleCameraState cameraState, Vector3 center, Vector3 size,
+    private void BillboardAxesPrepared(ParticleSystem s, in ParticleSystem.Particle p, in ParticleCameraState cameraState, Vector3 center, Vector3 size,
         Vector3 worldVelocity, out Vector3 x, out Vector3 y)
     {
         Quaternion view = BillboardAlignment(s, in cameraState, center, worldVelocity);

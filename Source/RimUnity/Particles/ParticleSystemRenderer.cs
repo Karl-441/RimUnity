@@ -91,27 +91,31 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             var drawSpace = new ParticleSystem.DrawSpace(system);
             ClearMesh(); order.Clear();
             for (int i = 0; i < system.count; i++) order.Add(i);
-            SortParticles(system, in cameraState, in drawSpace);
+            if (sortMode != ParticleSystemSortMode.None)
+            {
+                using var sortCpu = LabCpuMetrics.Measure(LabCpuStage.ParticleSort);
+                try
+                {
+                    PrepareSorting(system, in cameraState, in drawSpace);
+                    // Keep this call in Draw: optional DPA instruments this exact site.
+                    order.Sort(particleComparison ??= CompareParticles);
+                }
+                finally { ClearSorting(); }
+            }
             DrawParticleBatches(system, camera, in cameraState, in drawSpace);
         }
         if (system.trails.enabled && trailMaterial != null) DrawTrails(system, camera);
         TrimSpriteBatches();
     }
-    private void SortParticles(ParticleSystem system, in ParticleCameraState cameraState, in ParticleSystem.DrawSpace drawSpace)
+    private void PrepareSorting(ParticleSystem system, in ParticleCameraState cameraState, in ParticleSystem.DrawSpace drawSpace)
     {
-        if (sortMode == ParticleSystemSortMode.None) return;
-        using var sortCpu = LabCpuMetrics.Measure(LabCpuStage.ParticleSort);
         sortingSystem = system;
         sortingPosition = cameraState.Position;
         sortingForward = cameraState.Forward;
-        try
-        {
-            if (sortMode != ParticleSystemSortMode.OldestInFront && sortMode != ParticleSystemSortMode.YoungestInFront && system.count > 1)
-                for (int i = 0; i < system.count; i++) sortingWorldPositions.Add(drawSpace.WorldPosition(system.particles[i]));
-            order.Sort(particleComparison ??= CompareParticles);
-        }
-        finally { sortingSystem = null; sortingWorldPositions.Clear(); }
+        if (sortMode != ParticleSystemSortMode.OldestInFront && sortMode != ParticleSystemSortMode.YoungestInFront && system.count > 1)
+            for (int i = 0; i < system.count; i++) sortingWorldPositions.Add(drawSpace.WorldPosition(system.particles[i]));
     }
+    private void ClearSorting() { sortingSystem = null; sortingWorldPositions.Clear(); }
     //排序期间相机姿态不变，比较器不重复读层级变换或创建闭包。
     private int CompareParticles(int a, int b)
     {
@@ -124,7 +128,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             _ => (sortingWorldPositions[b] - sortingPosition).sqrMagnitude.CompareTo((sortingWorldPositions[a] - sortingPosition).sqrMagnitude)
         };
     }
-    private void AppendParticle(ParticleSystem s, ParticleSystem.Particle p, in ParticleCameraState cameraState, in ParticleSystem.DrawSpace drawSpace)
+    private void AppendParticle(ParticleSystem s, in ParticleSystem.Particle p, in ParticleCameraState cameraState, in ParticleSystem.DrawSpace drawSpace)
     {
         Vector3 center, size; Color32 color; Vector4 c1, c2; Rect rect;
         using (LabCpuMetrics.Measure(LabCpuStage.ParticleAttributes))
@@ -168,6 +172,13 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         center += x * (pivot.x * 2) + y * (pivot.y * 2);
         int start = vertices.Count;
         streamVertexId = 0; streamUV3 = streamUV4 = Vector2.zero;
+        if (streamPacking != StreamPacking.General)
+        {
+            AppendSimpleBillboard(center, x, y, rect, color, c1, c2);
+            streamVertexId = 3;
+            Quad(start);
+            return;
+        }
         if (streamPacking == StreamPacking.General) PrepareParticleStreams(c1, c2);
         Vertex(center - x - y, new Vector2(rect.xMin, rect.yMin), color, c1, c2);
         streamVertexId = 1;

@@ -30,7 +30,7 @@ public sealed partial class ParticleSystem
             }
         }
 
-        internal Vector3 WorldPosition(Particle particle)
+        internal Vector3 WorldPosition(in Particle particle)
         {
             if (particle.eventSpace is { local: true } space)
                 return space.position + space.rotation * Vector3.Scale(particle.position, space.scale);
@@ -38,7 +38,7 @@ public sealed partial class ParticleSystem
             return transformed ? matrix.MultiplyPoint3x4(particle.position) : particle.position;
         }
 
-        internal Vector3 WorldVelocity(Particle particle)
+        internal Vector3 WorldVelocity(in Particle particle)
         {
             if (particle.eventSpace is { local: true } space)
                 return space.rotation * Vector3.Scale(particle.totalVelocity, space.scale);
@@ -46,7 +46,7 @@ public sealed partial class ParticleSystem
             return transformed ? matrix.MultiplyVector(particle.totalVelocity) : particle.totalVelocity;
         }
 
-        internal Vector3 ParticleScale(Particle particle)
+        internal Vector3 ParticleScale(in Particle particle)
             => particle.eventSpace is { local: true } space ? space.scale : scale;
     }
 }

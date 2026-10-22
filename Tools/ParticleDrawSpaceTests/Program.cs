@@ -16,7 +16,7 @@ internal static class Program
     {
         runtime = Path.GetFullPath(args[0]); game = Path.GetFullPath(args[1]); harmony = Path.GetFullPath(args[2]);
         AssemblyLoadContext.Default.Resolving += (_, name) => Resolve(name);
-        try { if (args[3] == "--sort-reuse") CheckSortReuse(Path.GetFullPath(args[4])); else if (args[3] == "--noise-reuse") NoiseReuseChecks.Run(Path.GetFullPath(args[4])); else if (args[3] == "--trail-reuse") CheckTrailReuse(Path.GetFullPath(args[4])); else if (args[3] == "--mixed-stress") MixedStressChecks.Run(); else if (args[3] == "--particle-physics-timeline") ParticlePhysicsTimelineChecks.Run(); else if (args[3] == "--particle-turnover") ParticleTurnoverChecks.Run(); else if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
+        try { if (args[3] == "--geometry-batch") CheckGeometryBatch(Path.GetFullPath(args[4])); else if (args[3] == "--sort-reuse") CheckSortReuse(Path.GetFullPath(args[4])); else if (args[3] == "--noise-reuse") NoiseReuseChecks.Run(Path.GetFullPath(args[4])); else if (args[3] == "--trail-reuse") CheckTrailReuse(Path.GetFullPath(args[4])); else if (args[3] == "--mixed-stress") MixedStressChecks.Run(); else if (args[3] == "--particle-physics-timeline") ParticlePhysicsTimelineChecks.Run(); else if (args[3] == "--particle-turnover") ParticleTurnoverChecks.Run(); else if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static void CheckTrailReuse(string baseline)
@@ -140,6 +140,37 @@ internal static class Program
             }
         }
     }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static void CheckGeometryBatch(string baseline)
+    {
+        CheckSortReuse(baseline);
+        using var current = new Rig(typeof(ParticleSystem).Assembly);
+        CheckVertexReuse(baseline, current, true);
+        CheckDenseQuads(baseline, current);
+        CheckPopulation(current);
+        Benchmark(current);
+    }
+    private static void CheckDenseQuads(string baseline, Rig current)
+    {
+        var context = new AssemblyLoadContext("dense quad baseline", true);
+        context.Resolving += (_, name) => name.Name == "RimUnity" ? null : Resolve(name);
+        using var old = new Rig(context.LoadFromAssemblyPath(baseline));
+        old.EnableCustomChannels(); current.EnableCustomChannels();
+        int cases = 0;
+        foreach (var layout in new[] { Array.Empty<string>(), new[] { "UV" }, new[] { "Position", "Normal", "Color", "Tangent" },
+            new[] { "UV", "UV2", "AnimBlend" }, new[] { "UV", "Custom1XYZW", "Custom2XY", "VertexID" } })
+        foreach (int count in new[] { 0, 1, 2, 3, 4, 5, 16, 64, 1024 })
+        {
+            old.Configure("Local", "Hierarchy", "Billboard", "View", 1, cases);
+            current.Configure("Local", "Hierarchy", "Billboard", "View", 1, cases);
+            old.Streams(layout); current.Streams(layout);
+            var expected = old.DenseGeometry(count); var actual = current.DenseGeometry(count);
+            foreach (string name in expected.Keys) Check(expected[name].SequenceEqual(actual[name]), $"dense quad mismatch {count}/{string.Join('+', layout)}: {name}");
+            Check(actual["vertices"].Length == count * 4 && actual["indices"].Length == count * 6, "dense quad channel counts diverge");
+            cases++;
+        }
+        Console.WriteLine($"PASS {cases} dense quad growth/layout cases, 0..1024 particles, nonzero custom channels, exact output and repeated ClearMesh/layout changes.");
+    }
     private static Assembly Resolve(AssemblyName name)
     {
         foreach (string folder in new[] { runtime, game })
@@ -192,12 +223,13 @@ internal static class Program
         Benchmark(current);
         CheckPopulation(current);
     }
-    private static void CheckVertexReuse(string baseline, Rig current)
+    private static void CheckVertexReuse(string baseline, Rig current, bool customChannels = false)
     {
         var context = new AssemblyLoadContext("frozen vertex baseline", true);
         context.Resolving += (_, name) => name.Name == "RimUnity" ? null : Resolve(name);
         using var old = new Rig(context.LoadFromAssemblyPath(baseline));
         Check(old.Renderer.GetType().Assembly.ManifestModule.ModuleVersionId != current.Renderer.GetType().Assembly.ManifestModule.ModuleVersionId, "marginal baseline is the current runtime");
+        if (customChannels) { old.EnableCustomChannels(); current.EnableCustomChannels(); }
         var layouts = new List<string[]> { Array.Empty<string>(), new[] { "Position", "Color", "Normal", "Tangent" }, new[] { "Position", "Normal", "Color", "UV" },
             new[] { "Color", "UV", "Normal", "Position", "Tangent", "Color" }, new[] { "UV", "UV" },
             new[] { "UV", "UV2", "UV3", "UV4", "VertexID", "ParticleIndex", "AnimBlend", "AnimFrame" },
@@ -260,7 +292,7 @@ internal static class Program
         var liveField = labType.GetField("live", Flags);
         var live = (IList)Activator.CreateInstance(liveField.FieldType); liveField.SetValue(lab, live);
         var entryType = liveField.FieldType.GetGenericArguments()[0];
-        live.Add(Activator.CreateInstance(entryType, Flags, null, new object[] { rig.Owner, new[] { (ParticleSystem)rig.System }, double.PositiveInfinity }, null));
+        live.Add(Activator.CreateInstance(entryType, Flags, null, new object[] { rig.Owner, new[] { (ParticleSystem)rig.System }, double.PositiveInfinity, -1 }, null));
         var active = (HashSet<ParticleSystem>)typeof(ParticleSystem).GetField("Active", BindingFlags.Static | BindingFlags.NonPublic).GetValue(null);
         active.Add((ParticleSystem)rig.System);
         using var background = new FixtureObject(new GameObject("background diagnostic fixture"));
@@ -301,9 +333,15 @@ internal static class Program
         var velocity = typeof(ParticleSystem).GetMethod("WorldVelocity", Flags).CreateDelegate<Func<ParticleSystem.Particle, Vector3>>(system);
         var scale = typeof(ParticleSystem).GetMethod("ParticleScale", Flags).CreateDelegate<Func<ParticleSystem.Particle, Vector3>>(system);
         object space = ctor.Invoke(new object[] { system });
-        var fastPosition = type.GetMethod("WorldPosition", Flags).CreateDelegate<Func<ParticleSystem.Particle, Vector3>>(space);
-        var fastVelocity = type.GetMethod("WorldVelocity", Flags).CreateDelegate<Func<ParticleSystem.Particle, Vector3>>(space);
-        var fastScale = type.GetMethod("ParticleScale", Flags).CreateDelegate<Func<ParticleSystem.Particle, Vector3>>(space);
+        Func<ParticleSystem.Particle, Vector3> CoordinateCall(object snapshot, string name)
+        {
+            var value = Expression.Parameter(typeof(ParticleSystem.Particle), "particle");
+            return Expression.Lambda<Func<ParticleSystem.Particle, Vector3>>(
+                Expression.Call(Expression.Constant(snapshot, type), type.GetMethod(name, Flags), value), value).Compile();
+        }
+        var fastPosition = CoordinateCall(space, "WorldPosition");
+        var fastVelocity = CoordinateCall(space, "WorldVelocity");
+        var fastScale = CoordinateCall(space, "ParticleScale");
         void Calls(bool fast, int count)
         {
             var p = fast ? fastPosition : position; var v = fast ? fastVelocity : velocity; var s = fast ? fastScale : scale;
@@ -322,7 +360,7 @@ internal static class Program
         rig.Root.transform.localPosition += new Vector3(3, -2, 5);
         Check(fastPosition(particle).Equals(saved), "snapshot unexpectedly follows later transform changes");
         object next = ctor.Invoke(new object[] { system });
-        var nextPosition = type.GetMethod("WorldPosition", Flags).CreateDelegate<Func<ParticleSystem.Particle, Vector3>>(next);
+        var nextPosition = CoordinateCall(next, "WorldPosition");
         Check(!nextPosition(particle).Equals(saved) && nextPosition(particle).Equals(position(particle)), "next draw failed to refresh transformed hierarchy");
         Console.WriteLine("PASS zero-allocation coordinate kernels, call-local snapshot isolation and next-call refresh.");
         // Include snapshot construction once per 40 particles, matching 100 systems / 4000 particles.
@@ -436,6 +474,18 @@ internal static class Program
             var alignedPoints = ((IEnumerable)Get(Renderer, "vertices")).Cast<Vector3>().ToArray();
             Check(Vector3.Dot(Vector3.Cross(alignedPoints[1] - alignedPoints[0], alignedPoints[2] - alignedPoints[0]).normalized, Vector3.forward) > .999f,
                 "shape-aligned mesh retains emission orientation");
+        }
+        internal void EnableCustomChannels()
+        {
+            var module = Get(System, "customData"); Set(module, "enabled", true);
+            var channels = (Array)Get(module, "streams");
+            for (int channel = 0; channel < 2; channel++)
+            {
+                var item = channels.GetValue(channel); SetEnum(item, "mode", "Vector");
+                var curves = (Array)Get(item, "curves");
+                for (int i = 0; i < 4; i++) curves.SetValue(Activator.CreateInstance(curves.GetType().GetElementType(),
+                    new object[] { (channel == 0 ? 1 : -1) * (.1f + i * .2f) }), i);
+            }
         }
         internal void Streams(params string[] names)
         {
@@ -594,6 +644,13 @@ internal static class Program
             {
                 var method = renderer.GetMethod("SortParticles", Flags);
                 if (method != null) steps.Add(Expression.Call(self, method, sys, cam, space));
+                else if (renderer.GetMethod("PrepareSorting", Flags) is { } prepare)
+                {
+                    var comparison = (Comparison<int>)renderer.GetMethod("CompareParticles", Flags).CreateDelegate(typeof(Comparison<int>), Renderer);
+                    steps.Add(Expression.TryFinally(Expression.Block(Expression.Call(self, prepare, sys, cam, space),
+                        Expression.Call(Expression.Constant(order), typeof(List<int>).GetMethod("Sort", new[] { typeof(Comparison<int>) }), Expression.Constant(comparison))),
+                        Expression.Call(self, renderer.GetMethod("ClearSorting", Flags))));
+                }
                 else
                 {
                     steps.Add(Expression.Assign(Expression.Field(self, renderer.GetField("sortingSystem", Flags)), sys));
@@ -626,6 +683,16 @@ internal static class Program
             Root.transform.localPosition += new Vector3(.2f * draw, -.1f, .3f);
             Custom.transform.localPosition += new Vector3(-1, .2f, .1f);
             CameraOwner.transform.localRotation = Quaternion.Euler(15 * draw, 45, 7);
+        }
+        internal Dictionary<string, object[]> DenseGeometry(int count)
+        {
+            renderer.GetMethod("ClearMesh", Flags).Invoke(Renderer, null);
+            var cameraData = Activator.CreateInstance(cameraState, Flags, null, new[] { Camera, null, (object)true }, null);
+            var space = Activator.CreateInstance(drawSpace, Flags, null, new[] { System }, null);
+            var append = renderer.GetMethod("AppendParticle", Flags);
+            for (int i = 0; i < count; i++) append.Invoke(Renderer, new[] { System, Particle(i, i % 3 == 0), cameraData, space });
+            if (count > 0) Check((int)Get(Renderer, "streamVertexId") == 3, "last quad vertex identity must stay unchanged");
+            return Channels();
         }
         private Dictionary<string, object[]> Channels()
         {
