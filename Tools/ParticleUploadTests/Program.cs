@@ -16,12 +16,13 @@ internal static class Program
     {
         root = Path.GetFullPath(args[0]);
         AssemblyLoadContext.Default.Resolving += (_, name) => {
-            string runtime = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../1.7/Assemblies", name.Name + ".dll"));
+            string runtime = Path.Combine(Environment.GetEnvironmentVariable("RIMUNITY_RUNTIME_DIR")
+                ?? Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../1.7/Assemblies")), name.Name + ".dll");
             string file = File.Exists(runtime) ? runtime : Path.Combine(root, name.Name + ".dll");
             return File.Exists(file) ? AssemblyLoadContext.Default.LoadFromAssemblyPath(file) : null;
         };
         SetDllDirectory(root);
-        try { Run(); return 0; } catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+        try { if (args.Length > 1 && args[1] == "--append-only") AppendOnlyChecks.Run(); else Run(); return 0; } catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
         finally { SetDllDirectory(null); }
     }
     [MethodImpl(MethodImplOptions.NoInlining)]

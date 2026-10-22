@@ -14,17 +14,19 @@ public sealed partial class ParticleSystemRenderer
         using var cpu = Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.TrailGeometry);
         ClearMesh();
         var module = system.trails;
+        var drawSpace = new ParticleSystem.DrawSpace(system);
         bool ribbon = module.mode == ParticleSystemTrailMode.Ribbon;
         Vector3 forward = camera != null ? camera.transform.forward : Vector3.forward;
         if (ribbon)
-            foreach (var trail in system.RibbonTrails()) AppendTrail(system, trail, true, forward);
+            foreach (var trail in system.RibbonTrails()) AppendTrail(system, trail, true, forward, in drawSpace);
         else
-            foreach (var trail in system.trailStates.Values) AppendTrail(system, trail, false, forward);
+            foreach (var trail in system.trailStates.Values) AppendTrail(system, trail, false, forward, in drawSpace);
         Submit(ref trailBatch, trailMaterial, camera);
     }
 
     //每个采样点只转换一次世界坐标，距离同时供贴图计算使用。
-    private void AppendTrail(ParticleSystem system, ParticleSystem.TrailState trail, bool ribbon, Vector3 forward)
+    private void AppendTrail(ParticleSystem system, ParticleSystem.TrailState trail, bool ribbon, Vector3 forward,
+        in ParticleSystem.DrawSpace drawSpace)
     {
         var module = system.trails;
         bool world = ribbon || module.worldSpace;
@@ -36,7 +38,7 @@ public sealed partial class ParticleSystemRenderer
             && module.textureMode != ParticleSystemTrailTextureMode.RepeatPerSegment && module.textureMode != ParticleSystemTrailTextureMode.Static;
         for (int i = 0; i < points.Count; i++)
         {
-            Vector3 position = world ? points[i].position : system.WorldPosition(points[i].position, trail.space);
+            Vector3 position = world ? points[i].position : drawSpace.WorldPosition(points[i].position, trail.space);
             if (needsDistance && i > 0) totalDistance += Vector3.Distance(trailWorldPoints[i - 1], position);
             trailWorldPoints.Add(position); trailDistances.Add(totalDistance);
         }

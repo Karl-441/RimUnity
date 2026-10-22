@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace RimUnity;
 
@@ -36,7 +37,7 @@ public sealed partial class Mesh
             || singleRange && activeSubmeshes != 1))
             throw new InvalidOperationException("只能追加到相同布局的粒子几何。");
         if (indices.Count % 3 != 0) throw new ArgumentException("粒子三角形索引数量必须是三的倍数。", nameof(indices));
-        foreach (int index in indices) if ((uint)index >= count) throw new ArgumentOutOfRangeException(nameof(indices));
+        foreach (int index in CollectionsMarshal.AsSpan(indices)) if ((uint)index >= count) throw new ArgumentOutOfRangeException(nameof(indices));
         if (count == 0) return;
         // The existing overload collapses an empty mesh's predeclared submeshes to one.
         if (singleRange && activeSubmeshes > 1) subMeshCount = 1;
@@ -50,10 +51,17 @@ public sealed partial class Mesh
         bool emptyRange = offset == 0 || newRange || submeshes[submesh].Count == 0;
         positions.AddRange(vertices); normalData.AddRange(normals); tangentData.AddRange(tangents); colorData.AddRange(colors);
         (texcoords[0] ??= new()).AddRange(uv0); (texcoords[1] ??= new()).AddRange(uv1); (texcoords[2] ??= new()).AddRange(uv2);
-        var triangles = submeshes[submesh]; triangles.EnsureCapacity(checked(triangles.Count + indices.Count));
-        foreach (int index in indices) triangles.Add(checked(index + offset));
-        Vector3 min = vertices[0], max = vertices[0];
-        foreach (var vertex in vertices) { min = Vector3.Min(min, vertex); max = Vector3.Max(max, vertex); }
+        var triangles = submeshes[submesh];
+        int start = triangles.Count, end = checked(start + indices.Count);
+        triangles.EnsureCapacity(end);
+        // The source is validated above; fill only the newly owned destination slice.
+        CollectionsMarshal.SetCount(triangles, end);
+        var targetIndices = CollectionsMarshal.AsSpan(triangles).Slice(start, indices.Count);
+        var sourceIndices = CollectionsMarshal.AsSpan(indices);
+        for (int i = 0; i < sourceIndices.Length; i++) targetIndices[i] = checked(sourceIndices[i] + offset);
+        var sourceVertices = CollectionsMarshal.AsSpan(vertices);
+        Vector3 min = sourceVertices[0], max = sourceVertices[0];
+        foreach (var vertex in sourceVertices) { min = Vector3.Min(min, vertex); max = Vector3.Max(max, vertex); }
         Vector3 globalMin = offset == 0 ? min : Vector3.Min(meshBounds.min, min);
         Vector3 globalMax = offset == 0 ? max : Vector3.Max(meshBounds.max, max);
         meshBounds.SetMinMax(globalMin, globalMax); dirty = true;

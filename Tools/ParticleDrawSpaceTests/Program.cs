@@ -6,7 +6,7 @@ using System.Runtime.Loader;
 using RimUnity;
 using Object = RimUnity.Object;
 
-internal static class Program
+internal static partial class Program
 {
     internal const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
     private static string game, runtime, harmony;
@@ -16,7 +16,7 @@ internal static class Program
     {
         runtime = Path.GetFullPath(args[0]); game = Path.GetFullPath(args[1]); harmony = Path.GetFullPath(args[2]);
         AssemblyLoadContext.Default.Resolving += (_, name) => Resolve(name);
-        try { if (args[3] == "--geometry-batch") CheckGeometryBatch(Path.GetFullPath(args[4])); else if (args[3] == "--sort-reuse") CheckSortReuse(Path.GetFullPath(args[4])); else if (args[3] == "--noise-reuse") NoiseReuseChecks.Run(Path.GetFullPath(args[4])); else if (args[3] == "--trail-reuse") CheckTrailReuse(Path.GetFullPath(args[4])); else if (args[3] == "--mixed-stress") MixedStressChecks.Run(); else if (args[3] == "--particle-physics-timeline") ParticlePhysicsTimelineChecks.Run(); else if (args[3] == "--particle-turnover") ParticleTurnoverChecks.Run(); else if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
+        try { if (args[3] == "--stream-pack") CheckStreamPacking(Path.GetFullPath(args[4])); else if (args[3] == "--mesh-directions") CheckMeshDirections(Path.GetFullPath(args[4])); else if (args[3] == "--geometry-batch") CheckGeometryBatch(Path.GetFullPath(args[4])); else if (args[3] == "--sort-reuse") CheckSortReuse(Path.GetFullPath(args[4])); else if (args[3] == "--noise-reuse") NoiseReuseChecks.Run(Path.GetFullPath(args[4])); else if (args[3] == "--trail-reuse") CheckTrailReuse(Path.GetFullPath(args[4])); else if (args[3] == "--mixed-stress") MixedStressChecks.Run(); else if (args[3] == "--particle-physics-timeline") ParticlePhysicsTimelineChecks.Run(); else if (args[3] == "--particle-turnover") ParticleTurnoverChecks.Run(); else if (args[3] == "--mesh-alignment") CheckMeshAlignment(); else Run(Path.GetFullPath(args[3]), args.Length > 4 && !string.IsNullOrWhiteSpace(args[4]) ? Path.GetFullPath(args[4]) : null); return 0; }
         catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
     }
     private static void CheckTrailReuse(string baseline)
@@ -26,6 +26,8 @@ internal static class Program
         context.Resolving += (_, name) => name.Name == "RimUnity" ? null : Resolve(name);
         using var old = new Rig(context.LoadFromAssemblyPath(baseline));
         using var current = new Rig(typeof(ParticleSystem).Assembly);
+        Check(old.Renderer.GetType().Assembly.ManifestModule.ModuleVersionId != typeof(ParticleSystem).Module.ModuleVersionId,
+            "trail baseline must differ from the current runtime");
         int scenario = 0;
         foreach (string simulation in new[] { "Local", "World", "Custom" })
         foreach (string scaling in new[] { "Hierarchy", "Local", "Shape" })
@@ -44,20 +46,8 @@ internal static class Program
             scenario++;
         }
         Console.WriteLine($"PASS {scenario} trail scenarios / {scenario * 9} exact channel comparisons, including empty, Ribbon, five texture modes, event/world/local/custom spaces and edited curves. No GPU.");
-        foreach (var rig in new[] { old, current }) rig.Configure("Local", "Hierarchy", "Billboard", "View", 1, 1);
-        var slow = old.TrailBatch(old.Trail(17, "Stretch", false, 0, 1), false);
-        var fast = current.TrailBatch(current.Trail(17, "Stretch", false, 0, 1), false);
-        for (int i = 0; i < 60; i++) { slow(); fast(); }
-        for (int run = 0; run < 3; run++)
-            foreach (bool optimized in new[] { false, true })
-            {
-                var action = optimized ? fast : slow;
-                long bytes = GC.GetAllocatedBytesForCurrentThread(), start = Stopwatch.GetTimestamp();
-                for (int i = 0; i < 100; i++) action();
-                long ticks = Stopwatch.GetTimestamp() - start;
-                Check(GC.GetAllocatedBytesForCurrentThread() == bytes, "trail geometry allocates after warmup");
-                Console.WriteLine($"Trail CPU run {run + 1}, optimized={optimized}: {ticks * 1000d / Stopwatch.Frequency / 100:F6} ms per 256 trails x 17 points, 0 B; synthetic geometry only.");
-            }
+        CheckTrailChannelWrites(old, current);
+        BenchmarkTrailSpaces(old, current);
     }
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static void CheckSortReuse(string baseline)
@@ -333,11 +323,12 @@ internal static class Program
         var velocity = typeof(ParticleSystem).GetMethod("WorldVelocity", Flags).CreateDelegate<Func<ParticleSystem.Particle, Vector3>>(system);
         var scale = typeof(ParticleSystem).GetMethod("ParticleScale", Flags).CreateDelegate<Func<ParticleSystem.Particle, Vector3>>(system);
         object space = ctor.Invoke(new object[] { system });
+        MethodInfo CoordinateMethod(string name) => type.GetMethods(Flags).Single(m => m.Name == name && m.GetParameters().Length == 1);
         Func<ParticleSystem.Particle, Vector3> CoordinateCall(object snapshot, string name)
         {
             var value = Expression.Parameter(typeof(ParticleSystem.Particle), "particle");
             return Expression.Lambda<Func<ParticleSystem.Particle, Vector3>>(
-                Expression.Call(Expression.Constant(snapshot, type), type.GetMethod(name, Flags), value), value).Compile();
+                Expression.Call(Expression.Constant(snapshot, type), CoordinateMethod(name), value), value).Compile();
         }
         var fastPosition = CoordinateCall(space, "WorldPosition");
         var fastVelocity = CoordinateCall(space, "WorldVelocity");
@@ -369,7 +360,7 @@ internal static class Program
             var data = Expression.Parameter(typeof(ParticleSystem.Particle[]), "data");
             var i = Expression.Variable(typeof(int), "i"); var frameSpace = Expression.Variable(type, "space");
             var p = Expression.Variable(typeof(ParticleSystem.Particle), "p"); var done = Expression.Label();
-            Expression Eval(string name) => fast ? Expression.Call(frameSpace, type.GetMethod(name, Flags), p)
+            Expression Eval(string name) => fast ? Expression.Call(frameSpace, CoordinateMethod(name), p)
                 : Expression.Call(Expression.Constant(system), typeof(ParticleSystem).GetMethod(name, Flags, null, new[] { typeof(ParticleSystem.Particle) }, null), p);
             var statements = new List<Expression>();
             if (fast) statements.Add(Expression.IfThen(Expression.Equal(Expression.Modulo(i, Expression.Constant(40)), Expression.Constant(0)),
@@ -394,7 +385,7 @@ internal static class Program
             Console.WriteLine($"4000-particle coordinate batch snapshot={fast}: {ticks * 1000d / Stopwatch.Frequency / 200:F6} ms; setup included (100 snapshots/batch), 0 B; not a whole-renderer or game measurement.");
         }
     }
-    private sealed class Rig : IDisposable
+    private sealed partial class Rig : IDisposable
     {
         internal readonly GameObject Root = new("draw-space root"), Mid = new("draw-space mid"), Owner = new("draw-space system"), Custom = new("custom space"), CameraOwner = new("draw-space camera");
         internal readonly object System, Renderer, Camera;
@@ -507,22 +498,24 @@ internal static class Program
                 new Vector3(i, 2, 3), new Vector2(.2f * i, .3f), new Color32(10, 20, 30, 40), new Vector4(i, 2, 3, 4), new Vector4(5, 6, 7, i) });
             return Channels();
         }
-        internal Action BuildGeometryBatch()
+        internal Action BuildGeometryBatch(int particleCount = 4000, int chunks = 300)
         {
             var i = Expression.Variable(typeof(int), "i"); var j = Expression.Variable(typeof(int), "j");
             var cam = Expression.Variable(cameraState, "camera"); var space = Expression.Variable(drawSpace, "space");
-            var data = Array.CreateInstance(particle, 14);
+            if (particleCount < chunks || chunks < 1) throw new ArgumentOutOfRangeException(nameof(particleCount));
+            int perChunk = particleCount / chunks, extra = particleCount % chunks;
+            var data = Array.CreateInstance(particle, perChunk + (extra > 0 ? 1 : 0));
             for (int k = 0; k < data.Length; k++) data.SetValue(Particle(k, k % 3 == 0), k);
             var outerDone = Expression.Label(); var innerDone = Expression.Label();
             var self = Expression.Constant(Renderer, renderer); var sys = Expression.Constant(System, ps);
             return Expression.Lambda<Action>(Expression.Block(new[] { i, j, cam, space },
                 Expression.Assign(i, Expression.Constant(0)),
-                Expression.Loop(Expression.IfThenElse(Expression.LessThan(i, Expression.Constant(300)), Expression.Block(
+                Expression.Loop(Expression.IfThenElse(Expression.LessThan(i, Expression.Constant(chunks)), Expression.Block(
                     Expression.Call(self, renderer.GetMethod("ClearMesh", Flags)),
                     Expression.Assign(cam, Expression.New(cameraState.GetConstructors(Flags).Single(), Expression.Constant(Camera, Camera.GetType()), Expression.Constant(null, cameraState.GetConstructors(Flags).Single().GetParameters()[1].ParameterType), Expression.Constant(true))),
                     Expression.Assign(space, Expression.New(drawSpace.GetConstructors(Flags).Single(), sys)),
                     Expression.Assign(j, Expression.Constant(0)),
-                    Expression.Loop(Expression.IfThenElse(Expression.LessThan(j, Expression.Condition(Expression.LessThan(i, Expression.Constant(100)), Expression.Constant(14), Expression.Constant(13))), Expression.Block(
+                    Expression.Loop(Expression.IfThenElse(Expression.LessThan(j, Expression.Condition(Expression.LessThan(i, Expression.Constant(extra)), Expression.Constant(perChunk + 1), Expression.Constant(perChunk))), Expression.Block(
                         Expression.Call(self, renderer.GetMethod("AppendParticle", Flags), sys, Expression.ArrayIndex(Expression.Constant(data, particle.MakeArrayType()), j), cam, space),
                         Expression.PostIncrementAssign(j), Expression.Empty()), Expression.Break(innerDone)), innerDone),
                     Expression.PostIncrementAssign(i), Expression.Empty()), Expression.Break(outerDone)), outerDone))).Compile();
@@ -596,21 +589,31 @@ internal static class Program
             }
             return trail;
         }
-        internal Dictionary<string, object[]> TrailChannels(object trail, bool ribbon)
+        internal Dictionary<string, object[]> TrailChannels(object trail, bool ribbon, Vector3? forward = null, bool clear = true)
         {
-            renderer.GetMethod("ClearMesh", Flags).Invoke(Renderer, null);
-            renderer.GetMethod("AppendTrail", Flags).Invoke(Renderer, new[] { System, trail, ribbon, (object)Vector3.forward });
+            if (clear) renderer.GetMethod("ClearMesh", Flags).Invoke(Renderer, null);
+            var append = renderer.GetMethod("AppendTrail", Flags);
+            object[] args = { System, trail, ribbon, forward ?? Vector3.forward };
+            if (append.GetParameters().Length == 5)
+                args = args.Append(Activator.CreateInstance(drawSpace, Flags, null, new[] { System }, null)).ToArray();
+            append.Invoke(Renderer, args);
             return Channels();
         }
         internal Action TrailBatch(object trail, bool ribbon)
         {
             var i = Expression.Variable(typeof(int), "i"); var done = Expression.Label();
             var self = Expression.Constant(Renderer, renderer);
-            return Expression.Lambda<Action>(Expression.Block(new[] { i },
-                Expression.Call(self, renderer.GetMethod("ClearMesh", Flags)), Expression.Assign(i, Expression.Constant(0)),
+            var space = Expression.Variable(drawSpace, "space");
+            var append = renderer.GetMethod("AppendTrail", Flags);
+            var args = new List<Expression> { Expression.Constant(System, ps), Expression.Constant(trail, trail.GetType()), Expression.Constant(ribbon), Expression.Constant(Vector3.forward) };
+            if (append.GetParameters().Length == 5) args.Add(space);
+            return Expression.Lambda<Action>(Expression.Block(new[] { i, space },
+                Expression.Call(self, renderer.GetMethod("ClearMesh", Flags)),
+                append.GetParameters().Length == 5
+                    ? Expression.Assign(space, Expression.New(drawSpace.GetConstructors(Flags).Single(), Expression.Constant(System, ps))) : Expression.Empty(),
+                Expression.Assign(i, Expression.Constant(0)),
                 Expression.Loop(Expression.IfThenElse(Expression.LessThan(i, Expression.Constant(256)), Expression.Block(
-                    Expression.Call(self, renderer.GetMethod("AppendTrail", Flags), Expression.Constant(System, ps),
-                        Expression.Constant(trail, trail.GetType()), Expression.Constant(ribbon), Expression.Constant(Vector3.forward)),
+                    Expression.Call(self, append, args),
                     Expression.PostIncrementAssign(i), Expression.Empty()), Expression.Break(done)), done))).Compile();
         }
         internal Vector3[] Axes(int camera, int scenario)

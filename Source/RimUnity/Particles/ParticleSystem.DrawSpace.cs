@@ -31,11 +31,14 @@ public sealed partial class ParticleSystem
         }
 
         internal Vector3 WorldPosition(in Particle particle)
+            => WorldPosition(particle.position, particle.eventSpace);
+
+        internal Vector3 WorldPosition(Vector3 point, EventSpace eventSpace)
         {
-            if (particle.eventSpace is { local: true } space)
-                return space.position + space.rotation * Vector3.Scale(particle.position, space.scale);
-            if (localUnscaled) return position + rotation * Vector3.Scale(particle.position, scale);
-            return transformed ? matrix.MultiplyPoint3x4(particle.position) : particle.position;
+            if (eventSpace is { local: true } space)
+                return space.position + space.rotation * Vector3.Scale(point, space.scale);
+            if (localUnscaled) return position + rotation * Vector3.Scale(point, scale);
+            return transformed ? matrix.MultiplyPoint3x4(point) : point;
         }
 
         internal Vector3 WorldVelocity(in Particle particle)

@@ -104,17 +104,33 @@ public sealed partial class ParticleSystemRenderer
             case StreamPacking.Zero:
                 packedUV.Add(default); custom1.Add(default); custom2.Add(default); return;
         }
-        Span<float> values = stackalloc float[12]; values.Clear();
+        Span<float> values = stackalloc float[12];
         if (streamValuesPrepared)
         {
             ReadOnlySpan<float> template = preparedStreamValues; template.CopyTo(values);
             foreach (var item in vertexStreamPlan)
             {
-                Vector4 value = StreamValue(item.Stream, uvValue, c1, c2);
-                for (int i = 0; i < item.Width; i++) values[item.Offset + i] = value[i];
+                // The layout admits only these vertex-varying streams. Write their
+                // known component counts directly, preserving offsets and UV2 math.
+                int offset = item.Offset;
+                switch (item.Stream)
+                {
+                    case ParticleSystemVertexStream.UV:
+                        values[offset] = uvValue.x; values[offset + 1] = uvValue.y; break;
+                    case ParticleSystemVertexStream.UV2:
+                        Vector4 nextUV = NextFrameUV(uvValue);
+                        values[offset] = nextUV.x; values[offset + 1] = nextUV.y; break;
+                    case ParticleSystemVertexStream.UV3:
+                        values[offset] = streamUV3.x; values[offset + 1] = streamUV3.y; break;
+                    case ParticleSystemVertexStream.UV4:
+                        values[offset] = streamUV4.x; values[offset + 1] = streamUV4.y; break;
+                    case ParticleSystemVertexStream.VertexID:
+                        values[offset] = streamVertexId; break;
+                    default: throw new InvalidOperationException("Invalid vertex stream plan: " + item.Stream);
+                }
             }
         }
-        else PackUnpreparedStreams(values, uvValue, c1, c2);
+        else { values.Clear(); PackUnpreparedStreams(values, uvValue, c1, c2); }
         packedUV.Add(new Vector4(values[0], values[1], values[2], values[3]));
         custom1.Add(new Vector4(values[4], values[5], values[6], values[7]));
         custom2.Add(new Vector4(values[8], values[9], values[10], values[11]));
@@ -144,8 +160,7 @@ public sealed partial class ParticleSystemRenderer
             ParticleSystemVertexStream.VertexID => new Vector4(streamVertexId, 0, 0, 0),
             ParticleSystemVertexStream.ParticleIndex => new Vector4(streamParticleIndex, 0, 0, 0),
             ParticleSystemVertexStream.MeshIndex => new Vector4(MeshIndex(streamParticle), 0, 0, 0),
-            ParticleSystemVertexStream.UV2 => new Vector4(streamNextUV.x + (uvValue.x - streamCurrentUV.x) / streamCurrentUV.width * streamNextUV.width,
-                streamNextUV.y + (uvValue.y - streamCurrentUV.y) / streamCurrentUV.height * streamNextUV.height, 0, 0),
+            ParticleSystemVertexStream.UV2 => NextFrameUV(uvValue),
             ParticleSystemVertexStream.Center => streamCenter,
             ParticleSystemVertexStream.SizeX or ParticleSystemVertexStream.SizeXY or ParticleSystemVertexStream.SizeXYZ => streamSize,
             ParticleSystemVertexStream.Rotation => new Vector4(streamParticle.rotation * Mathf.Deg2Rad, 0, 0, 0),
@@ -161,4 +176,9 @@ public sealed partial class ParticleSystemRenderer
             _ => throw new NotSupportedException("粒子数据流缺少求值器：" + stream)
         };
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private Vector4 NextFrameUV(Vector2 uvValue)
+        => new(streamNextUV.x + (uvValue.x - streamCurrentUV.x) / streamCurrentUV.width * streamNextUV.width,
+            streamNextUV.y + (uvValue.y - streamCurrentUV.y) / streamCurrentUV.height * streamNextUV.height, 0, 0);
 }

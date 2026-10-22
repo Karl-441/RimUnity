@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace RimUnity;
 
@@ -18,14 +19,31 @@ public sealed partial class ParticleSystemRenderer
     public float[] meshWeightings = Array.Empty<float>();
     public ParticleSystemMeshDistribution meshDistribution;
     private readonly Dictionary<Mesh, MeshGeometry> meshGeometry = new();
+    private bool sourceUniformNormals, sourceUniformTangents;
     private sealed class MeshGeometry
     {
         internal Vector3[] positions, normals;
         internal Vector2[] uv, uv3, uv4;
         internal Vector4[] tangents;
         internal int[] triangles;
+        internal readonly bool uniformNormals, uniformTangents;
         internal MeshGeometry(Mesh source)
-        { positions = source.vertices; normals = source.normals; uv = source.uv; uv3 = source.uv3; uv4 = source.uv4; tangents = source.tangents; triangles = source.triangles; }
+        {
+            positions = source.vertices; normals = source.normals; uv = source.uv; uv3 = source.uv3; uv4 = source.uv4; tangents = source.tangents; triangles = source.triangles;
+            uniformNormals = UniformDirection(normals, positions.Length); uniformTangents = UniformDirection(tangents, positions.Length);
+        }
+        // Metadata belongs to the existing decoded mesh snapshot, with the same invalidation.
+        // Only xyz is transformed; tangent handedness is copied per vertex below.
+        // Compare bits so signed zero and NaN payloads cannot merge distinct directions.
+        private static bool UniformDirection<T>(T[] values, int vertices) where T : unmanaged
+        {
+            int count = Math.Min(values.Length, vertices);
+            if (count < 2) return false;
+            var first = MemoryMarshal.AsBytes(values.AsSpan(0, 1)).Slice(0, 3 * sizeof(float));
+            for (int i = 1; i < count; i++)
+                if (!first.SequenceEqual(MemoryMarshal.AsBytes(values.AsSpan(i, 1)).Slice(0, first.Length))) return false;
+            return true;
+        }
     }
     public int meshCount => meshes.Length > 0 ? meshes.Length : mesh != null ? 1 : 0;
     public int GetMeshes(Mesh[] target)
@@ -82,5 +100,6 @@ public sealed partial class ParticleSystemRenderer
         sourceMesh = selected; sourcePositions = geometry.positions; sourceNormals = geometry.normals; sourceUV = geometry.uv;
         sourceTangents = geometry.tangents; sourceTriangles = geometry.triangles;
         sourceUV3 = geometry.uv3; sourceUV4 = geometry.uv4;
+        sourceUniformNormals = geometry.uniformNormals; sourceUniformTangents = geometry.uniformTangents;
     }
 }

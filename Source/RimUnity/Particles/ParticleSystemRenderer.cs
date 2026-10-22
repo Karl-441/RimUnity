@@ -148,13 +148,16 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
             // Shape-aligned particles already carry their emission orientation; other meshes obey Renderer alignment.
             Quaternion orientation = p.alignedToDirection ? s.ParticleRotation(p) : BillboardAlignment(s, in cameraState, center, streamVelocity);
             Matrix4x4 matrix = Matrix4x4.TRS(center, orientation * Quaternion.Euler(p.rotation3D), size);
-            Matrix4x4 normalMatrix = matrix.inverse.transpose;
+            Matrix4x4 normalMatrix = sourcePositions.Length != 0 && sourceNormals.Length != 0 ? matrix.inverse.transpose : default;
+            // Reuse identical source directions only within this particle's current pose.
+            Vector3 sharedNormal = sourceUniformNormals ? normalMatrix.MultiplyVector(sourceNormals[0]).normalized : default;
+            Vector4 sharedTangent = sourceUniformTangents ? (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[0]).normalized : default;
             bool flipMesh = ParticleSystem.Random(p.randomSeed, 82) < flip.z;
             if (sourcePositions.Length != 0 && streamPacking == StreamPacking.General) PrepareParticleStreams(c1, c2);
             for (int i = 0; i < sourcePositions.Length; i++)
             {
-                streamNormal = i < sourceNormals.Length ? normalMatrix.MultiplyVector(sourceNormals[i]).normalized : Vector3.forward;
-                streamTangent = i < sourceTangents.Length ? (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[i]).normalized : new Vector4(1, 0, 0, 1);
+                streamNormal = i < sourceNormals.Length ? (sourceUniformNormals ? sharedNormal : normalMatrix.MultiplyVector(sourceNormals[i]).normalized) : Vector3.forward;
+                streamTangent = i < sourceTangents.Length ? (sourceUniformTangents ? sharedTangent : (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[i]).normalized) : new Vector4(1, 0, 0, 1);
                 if (i < sourceTangents.Length) streamTangent.w = sourceTangents[i].w;
                 Vector2 source = i < sourceUV.Length ? sourceUV[i] : Vector2.zero;
                 streamVertexId = i; streamUV3 = i < sourceUV3.Length ? sourceUV3[i] : Vector2.zero; streamUV4 = i < sourceUV4.Length ? sourceUV4[i] : Vector2.zero;
