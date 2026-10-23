@@ -102,4 +102,68 @@ public sealed partial class ParticleSystemRenderer
         sourceUV3 = geometry.uv3; sourceUV4 = geometry.uv4;
         sourceUniformNormals = geometry.uniformNormals; sourceUniformTangents = geometry.uniformTangents;
     }
+
+    private void AppendMeshParticle(ParticleSystem s, in ParticleSystem.Particle p, in ParticleCameraState cameraState,
+        Vector3 center, Vector3 size, Rect rect, Color32 color, Vector4 c1, Vector4 c2)
+    {
+        SelectMesh(p);
+        int offset = vertices.Count;
+        // Shape-aligned particles already carry their emission orientation; other meshes obey Renderer alignment.
+        Quaternion orientation = p.alignedToDirection ? s.ParticleRotation(p) : BillboardAlignment(s, in cameraState, center, streamVelocity);
+        Matrix4x4 matrix = Matrix4x4.TRS(center, orientation * Quaternion.Euler(p.rotation3D), size);
+        Matrix4x4 normalMatrix = sourcePositions.Length != 0 && sourceNormals.Length != 0 ? matrix.inverse.transpose : default;
+        // Reuse identical source directions only within this particle's current pose.
+        Vector3 sharedNormal = sourceUniformNormals ? normalMatrix.MultiplyVector(sourceNormals[0]).normalized : default;
+        Vector4 sharedTangent = sourceUniformTangents ? (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[0]).normalized : default;
+        bool flipMesh = ParticleSystem.Random(p.randomSeed, 82) < flip.z;
+        if (sourcePositions.Length != 0 && streamPacking == StreamPacking.General) PrepareParticleStreams(c1, c2);
+        if (streamPacking != StreamPacking.General)
+            AppendSimpleMesh(matrix, normalMatrix, sharedNormal, sharedTangent, flipMesh, rect, color, c1, c2);
+        else
+        {
+            for (int i = 0; i < sourcePositions.Length; i++)
+            {
+                streamNormal = i < sourceNormals.Length ? (sourceUniformNormals ? sharedNormal : normalMatrix.MultiplyVector(sourceNormals[i]).normalized) : Vector3.forward;
+                streamTangent = i < sourceTangents.Length ? (sourceUniformTangents ? sharedTangent : (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[i]).normalized) : new Vector4(1, 0, 0, 1);
+                if (i < sourceTangents.Length) streamTangent.w = sourceTangents[i].w;
+                Vector2 source = i < sourceUV.Length ? sourceUV[i] : Vector2.zero;
+                streamVertexId = i; streamUV3 = i < sourceUV3.Length ? sourceUV3[i] : Vector2.zero; streamUV4 = i < sourceUV4.Length ? sourceUV4[i] : Vector2.zero;
+                Vector3 local = sourcePositions[i] + pivot;
+                if (flipMesh) local.z = -local.z;
+                Vertex(matrix.MultiplyPoint3x4(local), new Vector2(rect.x + source.x * rect.width, rect.y + source.y * rect.height), color, c1, c2);
+            }
+        }
+        foreach (int index in sourceTriangles) indices.Add(offset + index);
+    }
+
+    // Simple layouts have no vertex-dependent numeric stream plan. Reserve the
+    // owned channel slices once per particle; no source or output span escapes.
+    private void AppendSimpleMesh(Matrix4x4 matrix, Matrix4x4 normalMatrix, Vector3 sharedNormal,
+        Vector4 sharedTangent, bool flipMesh, Rect rect, Color32 color, Vector4 c1, Vector4 c2)
+    {
+        int count = sourcePositions.Length;
+        var positionOutput = AppendSlots(vertices, count);
+        var uvOutput = AppendSlots(uv, count);
+        var packedOutput = AppendSlots(packedUV, count);
+        var normalOutput = AppendSlots(normals, count);
+        var tangentOutput = AppendSlots(tangents, count);
+        AppendSlots(colors, count).Fill(color);
+        AppendSlots(custom1, count).Fill(streamPacking == StreamPacking.Default ? c1 : default);
+        AppendSlots(custom2, count).Fill(streamPacking == StreamPacking.Default ? c2 : default);
+        if (streamPacking == StreamPacking.Zero) packedOutput.Clear();
+        for (int i = 0; i < count; i++)
+        {
+            streamNormal = i < sourceNormals.Length ? (sourceUniformNormals ? sharedNormal : normalMatrix.MultiplyVector(sourceNormals[i]).normalized) : Vector3.forward;
+            streamTangent = i < sourceTangents.Length ? (sourceUniformTangents ? sharedTangent : (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[i]).normalized) : new Vector4(1, 0, 0, 1);
+            if (i < sourceTangents.Length) streamTangent.w = sourceTangents[i].w;
+            Vector2 source = i < sourceUV.Length ? sourceUV[i] : Vector2.zero;
+            streamVertexId = i; streamUV3 = i < sourceUV3.Length ? sourceUV3[i] : Vector2.zero; streamUV4 = i < sourceUV4.Length ? sourceUV4[i] : Vector2.zero;
+            Vector3 local = sourcePositions[i] + pivot;
+            if (flipMesh) local.z = -local.z;
+            Vector2 texcoord = new(rect.x + source.x * rect.width, rect.y + source.y * rect.height);
+            positionOutput[i] = matrix.MultiplyPoint3x4(local); uvOutput[i] = texcoord;
+            if (streamPacking != StreamPacking.Zero) packedOutput[i] = new Vector4(texcoord.x, texcoord.y, 0, 0);
+            normalOutput[i] = streamNormal; tangentOutput[i] = streamTangent;
+        }
+    }
 }

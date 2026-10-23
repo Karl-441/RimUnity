@@ -43,11 +43,14 @@ public sealed partial class ParticleSystemRenderer
 
     // Spans never escape the synchronous write or cross a resize of this list.
     // All four slots are initialized before any mesh submission can observe them.
-    private static Span<T> FourSlots<T>(List<T> target) where T : unmanaged
+    private static Span<T> FourSlots<T>(List<T> target) where T : unmanaged => AppendSlots(target, 4);
+
+    // Numeric storage only; the caller initializes the whole slice synchronously.
+    private static Span<T> AppendSlots<T>(List<T> target, int length) where T : unmanaged
     {
-        int start = target.Count, count = checked(start + 4);
+        int start = target.Count, count = checked(start + length);
         target.EnsureCapacity(count);
         CollectionsMarshal.SetCount(target, count);
-        return CollectionsMarshal.AsSpan(target).Slice(start, 4);
+        return CollectionsMarshal.AsSpan(target).Slice(start, length);
     }
 }
