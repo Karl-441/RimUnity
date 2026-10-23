@@ -133,9 +133,27 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         Vector3 center, size; Color32 color; Vector4 c1, c2; Rect rect;
         using (LabCpuMetrics.Measure(LabCpuStage.ParticleAttributes))
         {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var detailAttributes = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.Attributes);
+#endif
+
             particleRandom = ParticleSystem.Random(p.randomSeed, 97);
-            center = drawSpace.WorldPosition(p); size = Vector3.Scale(s.SizeAt(p), drawSpace.ParticleScale(p));
-            color = s.ColorAt(p); c1 = s.CustomAt(p, 0); c2 = s.CustomAt(p, 1);
+#if RIMUNITY_PARTICLE_ANALYSIS
+            using (Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.Space))
+#endif
+            { center = drawSpace.WorldPosition(p); }
+#if RIMUNITY_PARTICLE_ANALYSIS
+            using (Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.Size))
+#endif
+            { size = Vector3.Scale(s.SizeAt(p), drawSpace.ParticleScale(p)); }
+#if RIMUNITY_PARTICLE_ANALYSIS
+            using (Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.Color))
+#endif
+            { color = s.ColorAt(p); }
+#if RIMUNITY_PARTICLE_ANALYSIS
+            using (Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.Custom))
+#endif
+            { c1 = s.CustomAt(p, 0); c2 = s.CustomAt(p, 1); }
             streamParticle = p; streamSize = size; streamVelocity = drawSpace.WorldVelocity(p); streamCenter = center;
             rect = UV(s, p);
             if (ParticleSystem.Random(p.randomSeed, 80) < flip.x) { rect.x += rect.width; rect.width = -rect.width; }
@@ -173,11 +191,21 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
     private void ClearMesh() { packedBillboards = false; billboardVertices.Clear(); vertices.Clear(); uv.Clear(); packedUV.Clear(); colors.Clear(); custom1.Clear(); custom2.Clear(); indices.Clear(); normals.Clear(); tangents.Clear(); particleRandom = 0; streamValuesPrepared = false; streamNormal = Vector3.forward; streamTangent = new Vector4(1, 0, 0, 1); }
     private void Vertex(Vector3 p, Vector2 t, Color32 c, Vector4 c1 = default, Vector4 c2 = default)
     {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var particleDetailScope = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.VertexWrite);
+#endif
+
         vertices.Add(p); uv.Add(t);
         PackStreams(t, c1, c2);
         colors.Add(c); normals.Add(streamNormal); tangents.Add(streamTangent);
     }
-    private void Quad(int start) { indices.Add(start); indices.Add(start + 1); indices.Add(start + 2); indices.Add(start); indices.Add(start + 2); indices.Add(start + 3); }
+    private void Quad(int start)
+    {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var detailIndices = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.IndexWrite);
+#endif
+        indices.Add(start); indices.Add(start + 1); indices.Add(start + 2); indices.Add(start); indices.Add(start + 2); indices.Add(start + 3);
+    }
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private void PrepareSubmitUI(Material mat)
     {
@@ -186,8 +214,20 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
     }
     private void Submit(ref Mesh target, Material mat, Camera camera)
     {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var particleDetailScope = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.Submit);
+#endif
+
         using var cpu = LabCpuMetrics.Measure(LabCpuStage.ParticleSubmit);
         LabCpuMetrics.Work(LabCpuStage.ParticleSubmit, GeometryVertexCount, indices.Count);
+#if RIMUNITY_PARTICLE_ANALYSIS
+        Diagnostics.LabParticleDetail.Work(Diagnostics.ParticleDetailWork.Vertices, GeometryVertexCount);
+#endif
+
+#if RIMUNITY_PARTICLE_ANALYSIS
+        Diagnostics.LabParticleDetail.Work(Diagnostics.ParticleDetailWork.Indices, indices.Count);
+#endif
+
         var dpaToken = Diagnostics.DpaDiagnostics.BeginSubmit();
         int dpaRoute = 0;
         try

@@ -39,6 +39,10 @@ public sealed partial class ParticleSystemRenderer
     private void BillboardAxesPrepared(ParticleSystem s, in ParticleSystem.Particle p, in ParticleCameraState cameraState, Vector3 center, Vector3 size,
         Vector3 worldVelocity, out Vector3 x, out Vector3 y)
     {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var particleDetailScope = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.Axes);
+#endif
+
         // Stretch changes size even when emission/3D rotation overrides its axes.
         if (renderMode == ParticleSystemRenderMode.Stretch)
             size.y = Mathf.Abs(size.y) * lengthScale + worldVelocity.magnitude * velocityScale;

@@ -11,6 +11,10 @@ public sealed partial class ParticleSystemRenderer
     // General layouts retain Vertex/PackStreams, including VertexID and UV2 rules.
     private void AppendSimpleBillboard(Vector3 center, Vector3 x, Vector3 y, Rect rect, Color32 color, Vector4 c1, Vector4 c2)
     {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var particleDetailScope = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.VertexWrite);
+#endif
+
         Vector2 t0 = new(rect.xMin, rect.yMin), t1 = new(rect.xMin, rect.yMax),
             t2 = new(rect.xMax, rect.yMax), t3 = new(rect.xMax, rect.yMin);
         if (packedBillboards)
@@ -49,6 +53,9 @@ public sealed partial class ParticleSystemRenderer
     private static Span<T> AppendSlots<T>(List<T> target, int length) where T : unmanaged
     {
         int start = target.Count, count = checked(start + length);
+#if RIMUNITY_PARTICLE_ANALYSIS
+        if (target.Capacity < count) Diagnostics.LabParticleDetail.Work(Diagnostics.ParticleDetailWork.BufferGrowths);
+#endif
         target.EnsureCapacity(count);
         CollectionsMarshal.SetCount(target, count);
         return CollectionsMarshal.AsSpan(target).Slice(start, length);

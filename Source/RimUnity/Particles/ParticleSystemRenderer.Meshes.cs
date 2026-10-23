@@ -93,6 +93,10 @@ public sealed partial class ParticleSystemRenderer
     }
     private void SelectMesh(ParticleSystem.Particle particle)
     {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var detailSelection = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.MeshSelect);
+#endif
+
         int index = MeshIndex(particle);
         Mesh selected = meshes.Length > 0 ? meshes[index] : mesh;
         if (selected == null) throw new InvalidOperationException("Mesh 粒子没有设置网格：" + index);
@@ -106,15 +110,33 @@ public sealed partial class ParticleSystemRenderer
     private void AppendMeshParticle(ParticleSystem s, in ParticleSystem.Particle p, in ParticleCameraState cameraState,
         Vector3 center, Vector3 size, Rect rect, Color32 color, Vector4 c1, Vector4 c2)
     {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var particleDetailScope = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.Mesh);
+#endif
+
         SelectMesh(p);
         int offset = vertices.Count;
         // Shape-aligned particles already carry their emission orientation; other meshes obey Renderer alignment.
-        Quaternion orientation = p.alignedToDirection ? s.ParticleRotation(p) : BillboardAlignment(s, in cameraState, center, streamVelocity);
-        Matrix4x4 matrix = Matrix4x4.TRS(center, orientation * Quaternion.Euler(p.rotation3D), size);
-        Matrix4x4 normalMatrix = sourcePositions.Length != 0 && sourceNormals.Length != 0 ? matrix.inverse.transpose : default;
-        // Reuse identical source directions only within this particle's current pose.
-        Vector3 sharedNormal = sourceUniformNormals ? normalMatrix.MultiplyVector(sourceNormals[0]).normalized : default;
-        Vector4 sharedTangent = sourceUniformTangents ? (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[0]).normalized : default;
+        Quaternion orientation;
+        Matrix4x4 matrix, normalMatrix;
+        Vector3 sharedNormal;
+        Vector4 sharedTangent;
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using (Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.MeshPose))
+#endif
+        {
+            orientation = p.alignedToDirection ? s.ParticleRotation(p) : BillboardAlignment(s, in cameraState, center, streamVelocity);
+            matrix = Matrix4x4.TRS(center, orientation * Quaternion.Euler(p.rotation3D), size);
+            normalMatrix = sourcePositions.Length != 0 && sourceNormals.Length != 0 ? matrix.inverse.transpose : default;
+        }
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using (Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.MeshDirections))
+#endif
+        {
+            // Reuse identical source directions only within this particle's current pose.
+            sharedNormal = sourceUniformNormals ? normalMatrix.MultiplyVector(sourceNormals[0]).normalized : default;
+            sharedTangent = sourceUniformTangents ? (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[0]).normalized : default;
+        }
         bool flipMesh = ParticleSystem.Random(p.randomSeed, 82) < flip.z;
         if (sourcePositions.Length != 0 && streamPacking == StreamPacking.General) PrepareParticleStreams(c1, c2);
         if (streamPacking != StreamPacking.General)
@@ -123,6 +145,9 @@ public sealed partial class ParticleSystemRenderer
         {
             for (int i = 0; i < sourcePositions.Length; i++)
             {
+#if RIMUNITY_PARTICLE_ANALYSIS
+                using var detailMeshVertex = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.MeshVertices);
+#endif
                 streamNormal = i < sourceNormals.Length ? (sourceUniformNormals ? sharedNormal : normalMatrix.MultiplyVector(sourceNormals[i]).normalized) : Vector3.forward;
                 streamTangent = i < sourceTangents.Length ? (sourceUniformTangents ? sharedTangent : (Vector4)matrix.MultiplyVector((Vector3)sourceTangents[i]).normalized) : new Vector4(1, 0, 0, 1);
                 if (i < sourceTangents.Length) streamTangent.w = sourceTangents[i].w;
@@ -133,6 +158,9 @@ public sealed partial class ParticleSystemRenderer
                 Vertex(matrix.MultiplyPoint3x4(local), new Vector2(rect.x + source.x * rect.width, rect.y + source.y * rect.height), color, c1, c2);
             }
         }
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using (Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.IndexWrite))
+#endif
         foreach (int index in sourceTriangles) indices.Add(offset + index);
     }
 
@@ -141,6 +169,10 @@ public sealed partial class ParticleSystemRenderer
     private void AppendSimpleMesh(Matrix4x4 matrix, Matrix4x4 normalMatrix, Vector3 sharedNormal,
         Vector4 sharedTangent, bool flipMesh, Rect rect, Color32 color, Vector4 c1, Vector4 c2)
     {
+#if RIMUNITY_PARTICLE_ANALYSIS
+        using var particleDetailScope = Diagnostics.LabParticleDetail.Measure(Diagnostics.ParticleDetailStage.MeshVertices);
+#endif
+
         int count = sourcePositions.Length;
         var positionOutput = AppendSlots(vertices, count);
         var uvOutput = AppendSlots(uv, count);
