@@ -61,7 +61,7 @@ namespace RimUnity.Editor
             ["UnityEngine.MeshRenderer"] = new[] { "sharedMaterials", "enabled", "shadowCastingMode", "receiveShadows" },
             ["UnityEngine.SpriteRenderer"] = new[] { "sprite", "color", "flipX", "flipY", "sharedMaterial", "sortingOrder", "enabled" },
             ["UnityEngine.SkinnedMeshRenderer"] = new[] { "sharedMesh", "sharedMaterials", "bones", "rootBone", "localBounds", "enabled", "updateWhenOffscreen" },
-            ["UnityEngine.Animator"] = new[] { "runtimeAnimatorController", "speed", "updateMode", "fireEvents" },
+            ["UnityEngine.Animator"] = new[] { "runtimeAnimatorController", "speed", "updateMode", "fireEvents", "keepAnimatorStateOnDisable" },
             ["UnityEngine.ParticleSystemRenderer"] = new[] { "sharedMaterial", "trailMaterial", "renderMode", "alignment", "sortMode", "lengthScale", "velocityScale", "minParticleSize", "maxParticleSize", "pivot", "flip", "allowRoll", "enabled" },
             ["UnityEngine.EventSystems.EventSystem"] = new[] { "sendNavigationEvents", "firstSelectedGameObject", "pixelDragThreshold" },
             ["UnityEngine.EventSystems.EventTrigger"] = new[] { "triggers" }
