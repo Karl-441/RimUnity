@@ -62,7 +62,9 @@ internal static class HostFrame
             Tweening.DOTween.Update();
             NativeRuntime.LateUpdate();
             float realDelta = Time.unscaledDeltaTime;
-            float gameDelta = Current.Game == null || Find.TickManager.Paused ? 0 : realDelta * Find.TickManager.TickRateMultiplier;
+            //剧本配置已创建 Game，但世界界面尚未建立。此时读取暂停会进入 ForcePaused，并访问空的 TilePicker。
+            bool gameClock = Current.Game != null && Find.World?.UI != null && !Find.TickManager.Paused;
+            float gameDelta = gameClock ? realDelta * Find.TickManager.TickRateMultiplier : 0;
             effectsTime += gameDelta;
             ScreenEfx.EfxPlayer.Update(new(gameDelta, realDelta, effectsTime, Time.unscaledTime));
             ParticleFrame.Draw();
