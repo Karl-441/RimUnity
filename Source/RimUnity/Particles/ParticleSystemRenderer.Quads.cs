@@ -13,6 +13,17 @@ public sealed partial class ParticleSystemRenderer
     {
         Vector2 t0 = new(rect.xMin, rect.yMin), t1 = new(rect.xMin, rect.yMax),
             t2 = new(rect.xMax, rect.yMax), t3 = new(rect.xMax, rect.yMin);
+        if (packedBillboards)
+        {
+            var output = FourSlots(billboardVertices);
+            Vector4 customA = streamPacking == StreamPacking.Default ? c1 : default;
+            Vector4 customB = streamPacking == StreamPacking.Default ? c2 : default;
+            output[0] = PackedBillboardVertex(center - x - y, t0, color, customA, customB);
+            output[1] = PackedBillboardVertex(center - x + y, t1, color, customA, customB);
+            output[2] = PackedBillboardVertex(center + x + y, t2, color, customA, customB);
+            output[3] = PackedBillboardVertex(center + x - y, t3, color, customA, customB);
+            return;
+        }
         AppendFour(vertices, center - x - y, center - x + y, center + x + y, center + x - y);
         AppendFour(uv, t0, t1, t2, t3);
         if (streamPacking == StreamPacking.Zero) FourSlots(packedUV).Clear();

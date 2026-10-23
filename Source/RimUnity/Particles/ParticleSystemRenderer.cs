@@ -173,7 +173,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         Vector3 tangent = x.normalized;
         streamTangent = new Vector4(tangent.x, tangent.y, tangent.z, 1);
         center += x * (pivot.x * 2) + y * (pivot.y * 2);
-        int start = vertices.Count;
+        int start = GeometryVertexCount;
         streamVertexId = 0; streamUV3 = streamUV4 = Vector2.zero;
         if (streamPacking != StreamPacking.General)
         {
@@ -192,7 +192,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         Vertex(center + x - y, new Vector2(rect.xMax, rect.yMin), color, c1, c2);
         Quad(start);
     }
-    private void ClearMesh() { vertices.Clear(); uv.Clear(); packedUV.Clear(); colors.Clear(); custom1.Clear(); custom2.Clear(); indices.Clear(); normals.Clear(); tangents.Clear(); particleRandom = 0; streamValuesPrepared = false; streamNormal = Vector3.forward; streamTangent = new Vector4(1, 0, 0, 1); }
+    private void ClearMesh() { packedBillboards = false; billboardVertices.Clear(); vertices.Clear(); uv.Clear(); packedUV.Clear(); colors.Clear(); custom1.Clear(); custom2.Clear(); indices.Clear(); normals.Clear(); tangents.Clear(); particleRandom = 0; streamValuesPrepared = false; streamNormal = Vector3.forward; streamTangent = new Vector4(1, 0, 0, 1); }
     private void Vertex(Vector3 p, Vector2 t, Color32 c, Vector4 c1 = default, Vector4 c2 = default)
     {
         vertices.Add(p); uv.Add(t);
@@ -209,7 +209,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
     private void Submit(ref Mesh target, Material mat, Camera camera)
     {
         using var cpu = LabCpuMetrics.Measure(LabCpuStage.ParticleSubmit);
-        LabCpuMetrics.Work(LabCpuStage.ParticleSubmit, vertices.Count, indices.Count);
+        LabCpuMetrics.Work(LabCpuStage.ParticleSubmit, GeometryVertexCount, indices.Count);
         var dpaToken = Diagnostics.DpaDiagnostics.BeginSubmit();
         int dpaRoute = 0;
         try
@@ -230,7 +230,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
                 using (LabCpuMetrics.Measure(LabCpuStage.SubmitUI)) PrepareSubmitUI(mat);
             }
             if (cameraUiEntry == null && ParticleDrawBatch.TryAppend(mat, gameObject.layer, propertyBlock,
-                vertices, normals, tangents, colors, packedUV, custom1, custom2, indices)) { dpaRoute = 3; return; }
+                vertices, normals, tangents, colors, packedUV, custom1, custom2, indices, packedBillboards ? billboardVertices : null)) { dpaRoute = 3; return; }
             using (LabCpuMetrics.Measure(LabCpuStage.MeshFill))
             {
                 if (target == null)
@@ -238,10 +238,18 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
                     target = new Mesh { name = "RimUnity Particle Batch", indexFormat = IndexFormat.UInt32 };
                     target.MarkDynamic();
                 }
-                target.SetVertices(vertices); target.SetColors(colors); target.SetUVs(0, packedUV); target.SetUVs(1, custom1); target.SetUVs(2, custom2); target.SetTriangles(indices, 0);
-                target.SetNormals(normals); target.SetTangents(tangents);
+                if (packedBillboards)
+                {
+                    target.Clear();
+                    target.AppendParticleGeometry(vertices, normals, tangents, colors, packedUV, custom1, custom2, indices, 0, billboardVertices);
+                }
+                else
+                {
+                    target.SetVertices(vertices); target.SetColors(colors); target.SetUVs(0, packedUV); target.SetUVs(1, custom1); target.SetUVs(2, custom2); target.SetTriangles(indices, 0);
+                    target.SetNormals(normals); target.SetTangents(tangents);
+                }
             }
-            LabCpuMetrics.Work(LabCpuStage.MeshFill, vertices.Count, indices.Count);
+            LabCpuMetrics.Work(LabCpuStage.MeshFill, GeometryVertexCount, indices.Count);
             CaptureDiagnostics(mat, target);
             using (LabCpuMetrics.Measure(LabCpuStage.DrawMesh))
                 RimUnity.Graphics.DrawMesh(target, Matrix4x4.identity, mat, cameraUiEntry?.RenderLayer ?? gameObject.layer, 0, propertyBlock);
@@ -249,7 +257,7 @@ public sealed partial class ParticleSystemRenderer : MonoBehaviour
         }
         finally
         {
-            if (dpaToken.Start != 0) Diagnostics.DpaDiagnostics.EndSubmit(dpaToken, UnityEngine.Time.frameCount, vertices.Count, indices.Count, dpaRoute);
+            if (dpaToken.Start != 0) Diagnostics.DpaDiagnostics.EndSubmit(dpaToken, UnityEngine.Time.frameCount, GeometryVertexCount, indices.Count, dpaRoute);
         }
     }
 }

@@ -24,6 +24,7 @@ public sealed partial class ParticleSystemRenderer
     private void DrawParticleBatches(ParticleSystem system, Camera camera, in ParticleCameraState cameraState, in ParticleSystem.DrawSpace drawSpace)
     {
         using var cpu = Diagnostics.LabCpuMetrics.Measure(Diagnostics.LabCpuStage.ParticleGeometry);
+        packedBillboards = CanPackBillboards(system);
         if (!system.textureSheetAnimation.enabled || system.textureSheetAnimation.mode != ParticleSystemAnimationMode.Sprites)
         {
             foreach (int i in order) { streamParticleIndex = i; AppendParticle(system, system.particles[i], in cameraState, in drawSpace); }
