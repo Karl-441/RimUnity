@@ -22,7 +22,7 @@ internal static class Program
             return File.Exists(file) ? AssemblyLoadContext.Default.LoadFromAssemblyPath(file) : null;
         };
         SetDllDirectory(root);
-        try { if (args.Length > 1 && args[1] == "--packed-batch-bench") PackedParticleChecks.Benchmark(); else if (args.Length > 1 && args[1] == "--packed-host") RunPackedHost(); else if (args.Length > 1 && args[1] == "--packed-only") PackedParticleChecks.Run(); else if (args.Length > 1 && args[1] == "--append-only") AppendOnlyChecks.Run(); else Run(); return 0; } catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+        try { if (args.Length > 2 && args[1] == "--packed-snapshot") PackedParticleChecks.Snapshot(Path.GetFullPath(args[2])); else if (args.Length > 1 && args[1] == "--packed-batch-bench") PackedParticleChecks.Benchmark(); else if (args.Length > 1 && args[1] == "--packed-host") RunPackedHost(); else if (args.Length > 1 && args[1] == "--packed-only") PackedParticleChecks.Run(); else if (args.Length > 1 && args[1] == "--append-only") AppendOnlyChecks.Run(); else Run(); return 0; } catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
         finally { SetDllDirectory(null); }
     }
     [MethodImpl(MethodImplOptions.NoInlining)]

@@ -101,6 +101,43 @@ internal static class PackedParticleChecks
         Console.WriteLine($"PASS {checks} packed page checks: exact native vertex/index bytes, ranges/bounds, mixed legacy/packed order, zero/large/nonfinite input, ownership, readback/edit/reappend, mirror, triangle edges, invalid input and Clear.");
     }
 
+    // Run this same harness in separate processes against old/current Core.
+    // Include native upload bytes and global/submesh bounds in the digest.
+    internal static void Snapshot(string path)
+    {
+        RimUnity.Runtime.NativeRuntime.InitializeOnCurrentThread();
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+        int samples = 0;
+        foreach (int quads in new[] { 0, 1, 17, 1024 })
+        foreach (int pattern in new[] { 0, 1, 2, 3 })
+        foreach (float edge in new[] { 0f, -0f, float.Epsilon, float.PositiveInfinity, float.NegativeInfinity,
+            BitConverter.Int32BitsToSingle(unchecked((int)0xffc00123)) })
+        {
+            var data = new Data(quads, edge); var mesh = new Mesh { indexFormat = IndexFormat.UInt32 };
+            try
+            {
+                for (int step = 0; step < 4; step++)
+                {
+                    int range = quads == 0 ? 0 : step / 2;
+                    if ((pattern & 1 << step % 2) != 0) data.Append(mesh, range); else data.AppendPacked(mesh, range);
+                    Capture();
+                }
+                // Public readback changes canonical storage before the next append.
+                _ = mesh.vertices;
+                data.Append(mesh, quads == 0 ? 0 : mesh.subMeshCount); Capture();
+                mesh.Clear(); data.AppendPacked(mesh, 0); data.Append(mesh, 0); Capture();
+            }
+            finally { Object.DestroyImmediate(mesh); }
+            void Capture()
+            {
+                byte[] bytes = NativeBytes(mesh);
+                hash.AppendData(BitConverter.GetBytes(bytes.Length)); hash.AppendData(bytes); samples++;
+            }
+        }
+        File.WriteAllText(path, Convert.ToHexString(hash.GetHashAndReset()));
+        Console.WriteLine($"PASS captured {samples} native byte/bounds snapshots for old/current Core comparison.");
+    }
+
     internal static void RunHost(Waylith.EngineApplication app)
     {
         RimUnity.Runtime.NativeRuntime.InitializeOnCurrentThread();
@@ -150,7 +187,8 @@ internal static class PackedParticleChecks
                     _ = mesh.EngineMesh;
                 }
                 Frame(false); Frame(true); Equal(expected, actual);
-                for (int i = 0; i < 100; i++) { Frame(false); Frame(true); }
+                // Allow tiered JIT to finish before timing a newly exercised path.
+                for (int i = 0; i < 1000; i++) { Frame(false); Frame(true); }
                 for (int run = 0; run < 3; run++) foreach (bool packed in new[] { run % 2 == 0, run % 2 != 0 })
                 {
                     long bytes = GC.GetAllocatedBytesForCurrentThread(), start = Stopwatch.GetTimestamp();

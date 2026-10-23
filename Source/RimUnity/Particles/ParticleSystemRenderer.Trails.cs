@@ -69,9 +69,29 @@ public sealed partial class ParticleSystemRenderer
                 default: u0 = totalDistance > 0 ? startDistance / totalDistance : 0; u1 = totalDistance > 0 ? distance / totalDistance : 0; break;
             }
             int start = vertices.Count;
-            Vertex(p0 - side * width0, new Vector2(u0, 0), c0); Vertex(p0 + side * width0, new Vector2(u0, 1), c0);
-            Vertex(p1 + side * width1, new Vector2(u1, 1), c1); Vertex(p1 - side * width1, new Vector2(u1, 0), c1); Quad(start);
+            AppendTrailQuad(p0 - side * width0, p0 + side * width0, p1 + side * width1, p1 - side * width1,
+                u0, u1, c0, c1); Quad(start);
             previousWidth = width1; previousColor = c1;
         }
+    }
+
+    // Trails use zero custom channels in these layouts. Reserve each channel once
+    // per segment; general streams retain their established per-vertex inputs.
+    private void AppendTrailQuad(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3,
+        float u0, float u1, Color32 c0, Color32 c1)
+    {
+        Vector2 t0 = new(u0, 0), t1 = new(u0, 1), t2 = new(u1, 1), t3 = new(u1, 0);
+        if (streamPacking == StreamPacking.General)
+        {
+            Vertex(p0, t0, c0); Vertex(p1, t1, c0); Vertex(p2, t2, c1); Vertex(p3, t3, c1);
+            return;
+        }
+        AppendFour(vertices, p0, p1, p2, p3);
+        AppendFour(uv, t0, t1, t2, t3);
+        if (streamPacking == StreamPacking.Zero) FourSlots(packedUV).Clear();
+        else AppendFour(packedUV, new(u0, 0, 0, 0), new(u0, 1, 0, 0), new(u1, 1, 0, 0), new(u1, 0, 0, 0));
+        FourSlots(custom1).Clear(); FourSlots(custom2).Clear();
+        AppendFour(colors, c0, c0, c1, c1);
+        FourSlots(normals).Fill(streamNormal); FourSlots(tangents).Fill(streamTangent);
     }
 }

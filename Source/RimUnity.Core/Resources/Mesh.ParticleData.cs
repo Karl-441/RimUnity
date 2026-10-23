@@ -52,17 +52,14 @@ public sealed partial class Mesh
         bool newRange = submesh == activeSubmeshes;
         if (newRange) { subMeshCount = submesh + 1; particleSubmeshBounds.Add(default); }
         bool emptyRange = offset == 0 || newRange || submeshes[submesh].Count == 0;
+        Vector3 min = default, max = default;
+        bool boundsCalculated = false;
         if (packed != null && (offset == 0 || particleVertices.Count != 0)) particleVertices.AddRange(packed);
         else if (packed != null) AppendParticleChannels(CollectionsMarshal.AsSpan(packed));
         else if (particleVertices.Count != 0)
         {
-            int endVertex = checked(offset + count);
-            particleVertices.EnsureCapacity(endVertex);
-            CollectionsMarshal.SetCount(particleVertices, endVertex);
-            var output = CollectionsMarshal.AsSpan(particleVertices).Slice(offset, count);
-            for (int i = 0; i < count; i++) output[i] = new ParticleVertex {
-                Position = vertices[i], Normal = normals[i], Tangent = tangents[i], Color = colors[i],
-                UV0 = uv0[i], UV1 = uv1[i], UV2 = uv2[i] };
+            (min, max) = AppendUnpackedParticleVertices(vertices, normals, tangents, colors, uv0, uv1, uv2);
+            boundsCalculated = true;
         }
         else
         {
@@ -77,14 +74,13 @@ public sealed partial class Mesh
         var targetIndices = CollectionsMarshal.AsSpan(triangles).Slice(start, indices.Count);
         var sourceIndices = CollectionsMarshal.AsSpan(indices);
         for (int i = 0; i < sourceIndices.Length; i++) targetIndices[i] = checked(sourceIndices[i] + offset);
-        Vector3 min, max;
         if (packed != null)
         {
             var source = CollectionsMarshal.AsSpan(packed);
             min = max = source[0].Position;
             foreach (ref readonly var vertex in source) { min = Vector3.Min(min, vertex.Position); max = Vector3.Max(max, vertex.Position); }
         }
-        else
+        else if (!boundsCalculated)
         {
             var source = CollectionsMarshal.AsSpan(vertices);
             min = max = source[0];
