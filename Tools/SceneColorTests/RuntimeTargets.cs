@@ -19,6 +19,7 @@ internal static partial class Program
             var snapshotType = runtime.GetType("RimUnity.Rendering.HdrDrawFrame", true);
             const BindingFlags instance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
             using var fixture = new RuntimeGeometry(app, runtime, scratch);
+            CheckMapHdrSetting(runtime, fixture);
             foreach (var format in SceneFormats)
             {
                 var host = Pattern(format);
