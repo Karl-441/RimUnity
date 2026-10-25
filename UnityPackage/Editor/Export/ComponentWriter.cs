@@ -129,6 +129,11 @@ namespace RimUnity.Editor
             {
                 foreach (string name in names)
                 {
+                    //False is the runtime default. Older standalone runtimes do not
+                    //expose this property, so do not require it for default assets.
+                    //Keep explicit retention: silently dropping true changes semantics.
+                    if (component is Animator animator && name == "keepAnimatorStateOnDisable" && !animator.keepAnimatorStateOnDisable)
+                        continue;
                     if (name == "padding" && component is LayoutGroup)
                     {
                         RectOffset padding = (RectOffset)component.GetType().GetProperty(name).GetValue(component);
