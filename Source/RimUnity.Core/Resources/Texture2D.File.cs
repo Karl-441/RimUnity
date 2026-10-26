@@ -43,9 +43,9 @@ public sealed partial class Texture2D
                 (LoadedTextureFormat)payload.format, payload.levels, payload.opaque);
         }
         byte[] bytes = File.ReadAllBytes(path);
-        byte[] rgba = PngDecoder.TryDecodeRgba32(bytes, out int width, out int height);
+        byte[] rgba = EngineTextureApi.TryDecodePng(bytes, out int width, out int height);
         if (rgba != null)
-            return new LoadedTextureData(width, height, 1, LoadedTextureFormat.Rgba32, new[] { rgba }, TexturePixelData.IsOpaqueRgba32(rgba));
+            return new LoadedTextureData(width, height, 1, LoadedTextureFormat.Rgba32, new[] { rgba }, EngineTextureApi.IsOpaqueRgba32(rgba));
         if (GpuTextureService.TryLoadTextureFromMemory(bytes, out var decoded)) return decoded;
         throw new InvalidDataException("无法解码纹理：" + path);
     }

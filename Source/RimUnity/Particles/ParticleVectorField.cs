@@ -1,6 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
-using TexturePixelData = Waylith.Rendering.TexturePixelData;
+using TexturePixelData = Waylith.Graphics.Textures.TexturePixelData;
 using LoadedTextureFormat = Waylith.Rendering.LoadedTextureFormat;
 
 namespace RimUnity;
